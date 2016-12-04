@@ -102,9 +102,13 @@ func (s *Server) serveWrapper(ctx echo.Context) error {
 	s.Queue[url] = site
 	nonce := randomString(36)
 	wrapperKey := randomString(36)
+	title := site.Address
+	if site.Content != nil {
+		title = site.Content.S("title").Data().(string)
+	}
 	err := ctx.Render(http.StatusOK, "wrapper", map[string]interface{}{
 		"rev":                REV,
-		"title":              "Hello!",
+		"title":              title,
 		"file_url":           "/inner/" + site.Address,
 		"address":            site.Address,
 		"file_inner_path":    "index.html",
