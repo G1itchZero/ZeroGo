@@ -3,8 +3,11 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
+	"sync"
 	"time"
 
+	"github.com/Jeffail/gabs"
 	log "github.com/Sirupsen/logrus"
 	websocket "github.com/gorilla/websocket"
 )
@@ -14,6 +17,8 @@ type UiSocket struct {
 	Connection   *websocket.Conn
 	Site         *Site
 	Disconnected chan int
+	MsgID        int
+	sync.Mutex
 }
 
 func NewUiSocket(site *Site, wrapperKey string) *UiSocket {
@@ -22,7 +27,18 @@ func NewUiSocket(site *Site, wrapperKey string) *UiSocket {
 		WrapperKey:   wrapperKey,
 		Disconnected: make(chan int),
 		Site:         site,
+		MsgID:        1,
 	}
+	go func() {
+		for event := range site.OnChanges {
+			if socket.Connection != nil {
+				socket.Site.Wait()
+				info := socket.Site.GetInfo()
+				info.Event = []interface{}{event.Type, event.Payload}
+				socket.Cmd("setSiteInfo", info)
+			}
+		}
+	}()
 	return &socket
 }
 
@@ -35,10 +51,8 @@ func (socket *UiSocket) Serve(ws *websocket.Conn) {
 		"wrapper_key": socket.WrapperKey,
 	}).Info("New socket connection")
 	for {
-		// Read
 		_, data, err := ws.ReadMessage()
 		if err != nil {
-			// log.Fatal(err)
 			log.WithFields(log.Fields{
 				"site":        socket.Site.Address,
 				"wrapper_key": socket.WrapperKey,
@@ -46,14 +60,26 @@ func (socket *UiSocket) Serve(ws *websocket.Conn) {
 			return
 		}
 		message := Message{}
-		json.Unmarshal(data, &message)
-		log.WithFields(log.Fields{
-			"site":        socket.Site.Address,
-			"wrapper_key": socket.WrapperKey,
-			"massage":     message,
-		}).Info("Message")
+		err = json.Unmarshal(data, &message)
+		// log.WithFields(log.Fields{
+		// 	"site":        socket.Site.Address,
+		// 	"wrapper_key": socket.WrapperKey,
+		// 	"massage":     message,
+		// }).Info("Message")
 
 		switch message.Cmd {
+		case "fileQuery":
+			filename := message.Params.([]interface{})[0].(string)
+			content, _ := socket.Site.GetFile(filename)
+			if strings.HasSuffix(filename, ".json") {
+				jsonContent, _ := gabs.ParseJSON(content)
+				socket.Response(message.ID, []interface{}{jsonContent.Data()})
+			} else {
+				socket.Response(message.ID, []interface{}{string(content)})
+			}
+		case "siteDelete":
+			socket.Site.Manager.Remove(message.Params.(map[string]interface{})["address"].(string))
+			socket.Notification("done", "Site deleted.")
 		case "siteInfo":
 			socket.Site.Wait()
 			socket.Response(message.ID, socket.Site.GetInfo())
@@ -91,13 +117,18 @@ func (socket *UiSocket) Notification(notificationType string, text string) {
 }
 
 func (socket *UiSocket) Cmd(cmd string, params interface{}) {
-	msg, _ := json.Marshal(Message{cmd, params, 1})
+	msg, _ := json.Marshal(Message{cmd, params, socket.MsgID})
+	socket.Lock()
 	socket.Connection.WriteMessage(websocket.TextMessage, msg)
+	socket.MsgID++
+	socket.Unlock()
 }
 
 func (socket *UiSocket) Response(to int, result interface{}) {
 	msg, _ := json.Marshal(SocketResponse{"response", 1, to, result})
+	socket.Lock()
 	socket.Connection.WriteMessage(websocket.TextMessage, msg)
+	socket.Unlock()
 }
 
 type Message struct {

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"html/template"
 	"io"
@@ -61,7 +62,7 @@ func (s *Server) socketHandler(c echo.Context) error {
 	if ws != nil && ok {
 		socket.Serve(ws)
 	}
-	return nil
+	return errors.New("Socket closed")
 }
 
 func (s *Server) Serve() {
@@ -79,9 +80,9 @@ func (s *Server) Serve() {
 	inner.GET("/*", s.serveInnerStatic)
 
 	e.GET("/Websocket", s.socketHandler)
+	// e.GET("/favicon.ico", s.serveInnerStatic, InnerMiddleware)
 	e.GET("/:url/", s.serveWrapper)
 	e.GET("/:url", s.serveWrapper)
-	e.GET("/favicon.ico", nil)
 	e.GET("/", s.serveWrapper)
 
 	e.Logger.Fatal(e.Start(fmt.Sprintf(":%d", s.Port)))
@@ -92,6 +93,9 @@ func (s *Server) serveWrapper(ctx echo.Context) error {
 	url := ctx.Param("url")
 	if url == "" {
 		url = ZN_HOMEPAGE
+	}
+	if url == "favicon.ico" {
+		return nil
 	}
 	site := s.Sites.Get(url)
 	fmt.Println(fmt.Sprintf("> %s", yellow(url)))
@@ -110,6 +114,7 @@ func (s *Server) serveWrapper(ctx echo.Context) error {
 		"query_string":  "?wrapper_nonce=" + nonce,
 		"wrapper_nonce": nonce,
 		"wrapper_key":   wrapperKey,
+		"homepage":      "/" + ZN_HOMEPAGE,
 	})
 	socket := NewUiSocket(site, wrapperKey)
 	s.Sockets[wrapperKey] = socket

@@ -36,6 +36,8 @@ type Downloader struct {
 	ContentRequested bool
 	Content          *gabs.Container
 	TotalFiles       int
+	OnChanges        chan SiteEvent
+	InProgress       bool
 	sync.Mutex
 }
 
@@ -64,7 +66,8 @@ func NewAnnounce(address string, tracker string) Announce {
 
 func NewDownloader(address string) *Downloader {
 	d := Downloader{
-		Address: address,
+		Address:   address,
+		OnChanges: make(chan SiteEvent, 10),
 	}
 	return &d
 }
@@ -94,7 +97,8 @@ func (d *Downloader) Download(done chan int) {
 	// announced := false
 	tCount := 0
 	fCount := 1
-	for {
+	d.InProgress = true
+	for d.InProgress {
 		select {
 		case file := <-files:
 			if file.Filename == "" {
@@ -104,6 +108,7 @@ func (d *Downloader) Download(done chan int) {
 				"file": file.Filename,
 			}).Infof("Task completed [%d/%d] in q: %d", fCount, len(d.Queue)+len(d.Done), len(d.Queue))
 			fCount++
+			go func() { d.OnChanges <- SiteEvent{"file_done", file.Filename} }()
 			if len(d.Queue) > 0 {
 				go func() {
 					d.Lock()
@@ -112,10 +117,14 @@ func (d *Downloader) Download(done chan int) {
 				}()
 			} else if len(d.Done) == d.TotalFiles {
 				fmt.Println("Site downloaded.")
-				done <- 0
+				d.InProgress = false
+				break
+				return
 				// os.Exit(0)
 			}
 		case peer := <-inbox:
+			// go func() { d.OnChanges <- 0 }()
+			go func() { d.OnChanges <- SiteEvent{"peers_added", 1} }()
 			if d.peerIsKnown(peer) {
 				continue
 			}
@@ -142,11 +151,14 @@ func (d *Downloader) Download(done chan int) {
 			}(peer)
 		case _ = <-announce:
 			tCount++
+			// go func() { d.OnChanges <- 0 }()
 			if tCount == len(trackers) {
 				// announced = true
 			}
 		}
 	}
+	fmt.Println("Downloader finished.")
+	done <- 0
 	// fmt.Printf("Peers: %s", yellow(len(d.Peers)))
 }
 
@@ -156,11 +168,10 @@ func (d *Downloader) connectPeer(peer *Peer) {
 		// fmt.Println(fmt.Sprintf("Connection established: %s:%d", peer.Address, peer.Port))
 		peer.Ping()
 	} else {
-		// fmt.Println("Connection error", err)
-		log.WithFields(log.Fields{
-			"error": err,
-			"peer":  peer,
-		}).Warn("Connection error")
+		// log.WithFields(log.Fields{
+		// 	"error": err,
+		// 	"peer":  peer,
+		// }).Warn("Connection error")
 		d.removeFreePeer(peer)
 	}
 }

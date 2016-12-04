@@ -1,10 +1,19 @@
 package main
 
 import (
-	"fmt"
+	"io/ioutil"
+	"log"
+	"os"
+	"path"
+	"time"
 
 	"github.com/Jeffail/gabs"
 )
+
+type SiteEvent struct {
+	Type    string
+	Payload interface{}
+}
 
 type Site struct {
 	Address    string
@@ -14,10 +23,11 @@ type Site struct {
 	Manager    *SiteManager
 	Added      int
 	Ready      bool
+	OnChanges  chan SiteEvent
 }
 
 func NewSite(address string, sm *SiteManager) *Site {
-	done := make(chan *Site)
+	done := make(chan *Site, 2)
 	site := Site{
 		Address:    address,
 		Done:       done,
@@ -25,17 +35,16 @@ func NewSite(address string, sm *SiteManager) *Site {
 		Manager:    sm,
 		Ready:      false,
 	}
-	var err error
-	site.Content, err = site.Downloader.GetContent()
-	fmt.Println(err)
+	site.OnChanges = site.Downloader.OnChanges
+	site.Content, _ = site.Downloader.GetContent()
 	return &site
 }
 
 func (site *Site) Download(ch chan *Site) {
 	site.Done = ch
 	if site.Downloader.TotalFiles != 0 && len(site.Downloader.Done) == site.Downloader.TotalFiles {
-		site.Done <- site
 		site.Ready = true
+		site.Done <- site
 		return
 	}
 	done := make(chan int)
@@ -46,10 +55,25 @@ func (site *Site) Download(ch chan *Site) {
 	site.Done <- site
 }
 
+func (site *Site) GetFile(filename string) ([]byte, error) {
+	content, err := ioutil.ReadFile(path.Join(DATA, site.Address, filename))
+	if err == nil {
+		return content, nil
+	}
+	return nil, err
+}
+
+func (site *Site) Remove() {
+	err := os.RemoveAll(path.Join(DATA, site.Address))
+	if err != nil {
+		log.Println(path.Join(DATA, site.Address), err)
+	}
+}
+
 func (site *Site) Wait() {
-	if !site.Ready {
-		<-site.Done
-		site.Ready = true
+	for !site.Ready {
+		time.Sleep(time.Microsecond)
+		print(".")
 	}
 }
 
@@ -110,10 +134,11 @@ type SiteInfo struct {
 	AuthAddress   string       `json:"auth_address"`
 	// AuthKeySha512  string       `json:"auth_key_sha512"`
 	// AuthKey        string       `json:"auth_key"`
-	BadFiles       int         `json:"bad_files"`
-	CertUserID     interface{} `json:"cert_user_id"`
-	StartedTaskNum int         `json:"started_task_num"`
-	ContentUpdated float64     `json:"content_updated"`
+	BadFiles       int           `json:"bad_files"`
+	CertUserID     interface{}   `json:"cert_user_id"`
+	StartedTaskNum int           `json:"started_task_num"`
+	ContentUpdated float64       `json:"content_updated"`
+	Event          []interface{} `json:"event"`
 }
 
 type SiteSettings struct {

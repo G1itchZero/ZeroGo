@@ -22,25 +22,36 @@ func NewSiteManager() *SiteManager {
 	return &sm
 }
 
+func (sm *SiteManager) Remove(address string) {
+	site := sm.Sites[address]
+	go site.Remove()
+	delete(sm.Sites, address)
+	sm.SaveSites()
+}
+
 func (sm *SiteManager) Get(address string) *Site {
-	done := make(chan *Site)
 	site, ok := sm.Sites[address]
 	if !ok {
 		site = NewSite(address, sm)
 		site.Added = int(time.Now().Unix())
 		sm.Sites[address] = site
-		// go func() {
-		// 	done <- site
-		// }()
 	}
-	go func() {
-		site.Download(done)
-		<-done
-		sites := sm.GetSites()
-		filename := path.Join(DATA, "sites.json")
-		ioutil.WriteFile(filename, []byte(sites.StringIndent("", "  ")), 644)
-	}()
+	go sm.processSite(site)
 	return site
+}
+
+func (sm *SiteManager) processSite(site *Site) {
+	done := make(chan *Site, 2)
+	site.Download(done)
+	site.Wait()
+	sm.SaveSites()
+}
+
+func (sm *SiteManager) SaveSites() {
+	sites := sm.GetSites()
+	// log.Fatal(sites)
+	filename := path.Join(DATA, "sites.json")
+	fmt.Println(ioutil.WriteFile(filename, []byte(sites.StringIndent("", "  ")), 644))
 }
 
 func (sm *SiteManager) GetSites() *gabs.Container {
