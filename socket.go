@@ -19,9 +19,9 @@ type UiSocket struct {
 func NewUiSocket(site *Site, wrapperKey string) *UiSocket {
 	fmt.Println("new socket", wrapperKey)
 	socket := UiSocket{
-		Site:         site,
 		WrapperKey:   wrapperKey,
 		Disconnected: make(chan int),
+		Site:         site,
 	}
 	return &socket
 }
@@ -55,6 +55,7 @@ func (socket *UiSocket) Serve(ws *websocket.Conn) {
 
 		switch message.Cmd {
 		case "siteInfo":
+			socket.Site.Wait()
 			socket.Response(message.ID, socket.Site.GetInfo())
 		case "siteList":
 			sites := []SiteInfo{}

@@ -22,7 +22,7 @@ func NewSiteManager() *SiteManager {
 	return &sm
 }
 
-func (sm *SiteManager) Get(address string) chan *Site {
+func (sm *SiteManager) Get(address string) *Site {
 	done := make(chan *Site)
 	site, ok := sm.Sites[address]
 	if !ok {
@@ -33,16 +33,14 @@ func (sm *SiteManager) Get(address string) chan *Site {
 		// 	done <- site
 		// }()
 	}
-	download := make(chan *Site)
-	go site.Download(download)
 	go func() {
-		<-download
+		site.Download(done)
+		<-done
 		sites := sm.GetSites()
 		filename := path.Join(DATA, "sites.json")
 		ioutil.WriteFile(filename, []byte(sites.StringIndent("", "  ")), 644)
-		done <- site
 	}()
-	return done
+	return site
 }
 
 func (sm *SiteManager) GetSites() *gabs.Container {

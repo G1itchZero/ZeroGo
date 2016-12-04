@@ -17,6 +17,7 @@ type Server struct {
 	Port    int
 	Sockets map[string]*UiSocket
 	Sites   *SiteManager
+	Queue   map[string]*Site
 }
 
 func NewServer(port int, sites *SiteManager) *Server {
@@ -24,6 +25,7 @@ func NewServer(port int, sites *SiteManager) *Server {
 		Port:    port,
 		Sockets: map[string]*UiSocket{},
 		Sites:   sites,
+		Queue:   map[string]*Site{},
 	}
 	return &server
 }
@@ -79,6 +81,7 @@ func (s *Server) Serve() {
 	e.GET("/Websocket", s.socketHandler)
 	e.GET("/:url/", s.serveWrapper)
 	e.GET("/:url", s.serveWrapper)
+	e.GET("/favicon.ico", nil)
 	e.GET("/", s.serveWrapper)
 
 	e.Logger.Fatal(e.Start(fmt.Sprintf(":%d", s.Port)))
@@ -90,11 +93,11 @@ func (s *Server) serveWrapper(ctx echo.Context) error {
 	if url == "" {
 		url = ZN_HOMEPAGE
 	}
-	done := s.Sites.Get(url)
+	site := s.Sites.Get(url)
 	fmt.Println(fmt.Sprintf("> %s", yellow(url)))
+	s.Queue[url] = site
 	nonce := randomString(36)
 	wrapperKey := randomString(36)
-	site := <-done
 	err := ctx.Render(http.StatusOK, "wrapper", map[string]interface{}{
 		"rev":                REV,
 		"title":              "Hello!",
@@ -114,9 +117,11 @@ func (s *Server) serveWrapper(ctx echo.Context) error {
 }
 
 func (s *Server) serveInner(ctx echo.Context) error {
-	site := ctx.Param("site")
-	root := path.Join(DATA, site)
+	name := ctx.Param("site")
+	root := path.Join(DATA, name)
 	filename := path.Join(root, "index.html")
+	site := s.Queue[name]
+	site.Wait()
 	return ctx.File(filename)
 }
 

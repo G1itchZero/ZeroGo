@@ -13,6 +13,7 @@ type Site struct {
 	Downloader *Downloader
 	Manager    *SiteManager
 	Added      int
+	Ready      bool
 }
 
 func NewSite(address string, sm *SiteManager) *Site {
@@ -22,6 +23,7 @@ func NewSite(address string, sm *SiteManager) *Site {
 		Done:       done,
 		Downloader: NewDownloader(address),
 		Manager:    sm,
+		Ready:      false,
 	}
 	var err error
 	site.Content, err = site.Downloader.GetContent()
@@ -33,13 +35,22 @@ func (site *Site) Download(ch chan *Site) {
 	site.Done = ch
 	if site.Downloader.TotalFiles != 0 && len(site.Downloader.Done) == site.Downloader.TotalFiles {
 		site.Done <- site
+		site.Ready = true
 		return
 	}
 	done := make(chan int)
 	go site.Downloader.Download(done)
 	<-done
 	site.Content = site.Downloader.Content
+	site.Ready = true
 	site.Done <- site
+}
+
+func (site *Site) Wait() {
+	if !site.Ready {
+		<-site.Done
+		site.Ready = true
+	}
 }
 
 func (site *Site) GetSettings() SiteSettings {
