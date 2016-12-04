@@ -23,6 +23,7 @@ type Site struct {
 	Manager    *SiteManager
 	Added      int
 	Ready      bool
+	Success    bool
 	OnChanges  chan SiteEvent
 }
 
@@ -34,6 +35,7 @@ func NewSite(address string, sm *SiteManager) *Site {
 		Downloader: NewDownloader(address),
 		Manager:    sm,
 		Ready:      false,
+		Success:    false,
 	}
 	site.OnChanges = site.Downloader.OnChanges
 	site.Content, _ = site.Downloader.GetContent()
@@ -48,7 +50,9 @@ func (site *Site) Download(ch chan *Site) {
 		return
 	}
 	done := make(chan int)
-	go site.Downloader.Download(done)
+	go func() {
+		site.Success = site.Downloader.Download(done)
+	}()
 	<-done
 	site.Content = site.Downloader.Content
 	site.Ready = true
@@ -79,10 +83,14 @@ func (site *Site) Wait() {
 
 func (site *Site) GetSettings() SiteSettings {
 	size := 0.0
+	modified := 0.0
 
-	files, _ := site.Content.S("files").ChildrenMap()
-	for _, file := range files {
-		size += file.Path("size").Data().(float64)
+	if site.Content != nil {
+		modified = site.Content.Path("modified").Data().(float64)
+		files, _ := site.Content.S("files").ChildrenMap()
+		for _, file := range files {
+			size += file.Path("size").Data().(float64)
+		}
 	}
 	return SiteSettings{
 
@@ -91,7 +99,7 @@ func (site *Site) GetSettings() SiteSettings {
 		OptionalDownloaded: 0,
 		BytesSent:          0,
 		Peers:              len(site.Downloader.FreePeers),
-		Modified:           site.Content.Path("modified").Data().(float64),
+		Modified:           modified,
 		SizeOptional:       0,
 		Serving:            false,
 		Own:                false,
@@ -101,11 +109,16 @@ func (site *Site) GetSettings() SiteSettings {
 }
 
 func (site *Site) GetInfo() SiteInfo {
+	var content interface{}
+	content = nil
+	if site.Content != nil {
+		content = site.Content.Data()
+	}
 	return SiteInfo{
 		Address:  site.Address,
 		Files:    site.Downloader.TotalFiles - 1,
 		Peers:    len(site.Downloader.FreePeers),
-		Content:  site.Content.Data(),
+		Content:  content,
 		Workers:  len(site.Downloader.BusyPeers),
 		Tasks:    len(site.Downloader.BusyPeers),
 		Settings: site.GetSettings(),

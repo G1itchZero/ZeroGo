@@ -72,7 +72,8 @@ func NewDownloader(address string) *Downloader {
 	return &d
 }
 
-func (d *Downloader) Download(done chan int) {
+func (d *Downloader) Download(done chan int) bool {
+	success := true
 	green := color.New(color.FgGreen).SprintFunc()
 	fmt.Println(fmt.Sprintf("Download site: %s", green(d.Address)))
 
@@ -119,7 +120,7 @@ func (d *Downloader) Download(done chan int) {
 				fmt.Println("Site downloaded.")
 				d.InProgress = false
 				break
-				return
+				return success
 				// os.Exit(0)
 			}
 		case peer := <-inbox:
@@ -150,15 +151,19 @@ func (d *Downloader) Download(done chan int) {
 				}
 			}(peer)
 		case _ = <-announce:
+			//TODO: waiting for connections
 			tCount++
-			// go func() { d.OnChanges <- 0 }()
-			if tCount == len(trackers) {
-				// announced = true
+			if tCount == len(trackers) && len(d.FreePeers)+len(d.BusyPeers) == 0 {
+				fmt.Println("No peers founded.")
+				d.InProgress = false
+				break
+				return false
 			}
 		}
 	}
 	fmt.Println("Downloader finished.")
 	done <- 0
+	return success
 	// fmt.Printf("Peers: %s", yellow(len(d.Peers)))
 }
 
