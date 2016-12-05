@@ -3,12 +3,18 @@ package main
 import (
 	"bytes"
 	"crypto/sha1"
+	"encoding/binary"
 	"errors"
 	"fmt"
+	r "math/rand"
+	"net"
 	"net/http"
 	"os"
 	"path"
+	"strconv"
+	"strings"
 	"sync"
+	"time"
 
 	"github.com/Jeffail/gabs"
 	"github.com/fatih/color"
@@ -38,6 +44,7 @@ type Downloader struct {
 	TotalFiles       int
 	OnChanges        chan SiteEvent
 	InProgress       bool
+	Trackers         []string
 	sync.Mutex
 }
 
@@ -68,6 +75,7 @@ func NewDownloader(address string) *Downloader {
 	d := Downloader{
 		Address:   address,
 		OnChanges: make(chan SiteEvent, 10),
+		Trackers:  []string{},
 	}
 	return &d
 }
@@ -125,6 +133,7 @@ func (d *Downloader) Download(done chan int) bool {
 			}
 		case peer := <-inbox:
 			// go func() { d.OnChanges <- 0 }()
+			fmt.Println(peer.Address, peer.Port)
 			go func() { d.OnChanges <- SiteEvent{"peers_added", 1} }()
 			if d.peerIsKnown(peer) {
 				continue
@@ -278,12 +287,14 @@ func (d *Downloader) peerIsKnown(peer *Peer) bool {
 	return false
 }
 
-func (d *Downloader) announceTracker(ch chan *Peer, done chan int, tracker string) {
-	// peer := Peer{Address: "192.168.1.38", Port: 15441}
-	// ch <- &peer
-	// return
-	// yellow := color.New(color.FgYellow).SprintFunc()
-	// red := color.New(color.FgRed).SprintFunc()
+func (d *Downloader) returnLocalhost(ch chan *Peer, done chan int) {
+	peer := Peer{Address: "192.168.1.38", Port: 15441}
+	ch <- &peer
+	done <- 0
+	return
+}
+
+func (d *Downloader) announceHTTP(ch chan *Peer, done chan int, tracker string) {
 	params, _ := query.Values(NewAnnounce(d.Address, tracker))
 	url := fmt.Sprintf("%s?%s", tracker, params.Encode())
 	log.WithFields(log.Fields{
@@ -305,4 +316,116 @@ func (d *Downloader) announceTracker(ch chan *Peer, done chan int, tracker strin
 		ch <- peer
 	}
 	done <- 0
+}
+
+const (
+	UDP_REQUEST_CONNECT  = 0
+	UDP_REQUEST_ANNOUNCE = 1
+)
+
+func (d *Downloader) announceUDP(ch chan *Peer, done chan int, tracker string) {
+	serverAddr, err := net.ResolveUDPAddr("udp", strings.Replace(tracker, "udp://", "", 1))
+	connectionID := int64(0x41727101980)
+	port := r.Intn(99) + 6800
+	rnd := r.New(r.NewSource(time.Now().UnixNano()))
+	transactionID := rnd.Int31()
+	sid := "-ZN" + strconv.Itoa(os.Getpid()) + "_" + strconv.FormatInt(rnd.Int63(), 10)
+	peerID := sid[0:20]
+	infoHash := sha1.Sum([]byte(d.Address))
+	fmt.Println(fmt.Sprintf("%x", sha1.Sum([]byte(d.Address))))
+	conn, err := net.ListenPacket("udp4", fmt.Sprintf(":%d", port))
+	if err != nil {
+		return
+	}
+	socket := conn.(*net.UDPConn)
+	defer socket.Close()
+
+	err = socket.SetDeadline(time.Now().Add(9 * time.Second))
+
+	request := new(bytes.Buffer)
+	var data = []interface{}{
+		connectionID,
+		int32(UDP_REQUEST_CONNECT),
+		transactionID,
+	}
+	for _, v := range data {
+		binary.Write(request, binary.BigEndian, v)
+	}
+	socket.WriteToUDP(request.Bytes(), serverAddr)
+	buf := make([]byte, 16)
+	buf2 := make([]byte, 10240)
+	n, addr, err := socket.ReadFromUDP(buf)
+	fmt.Println("Received ", fmt.Sprintf("%x", buf[0:n]), " from ", addr)
+	if err != nil {
+		fmt.Println("Error: ", err)
+		return
+	}
+	answer := bytes.NewReader(buf)
+	var resp_a int32
+	var resp_t int32
+	var resp_c int64
+	binary.Read(answer, binary.BigEndian, &resp_a)
+	binary.Read(answer, binary.BigEndian, &resp_t)
+	binary.Read(answer, binary.BigEndian, &resp_c)
+	fmt.Println(resp_a, resp_t, resp_c)
+	announce := new(bytes.Buffer)
+	data = []interface{}{
+		resp_c,
+		int32(UDP_REQUEST_ANNOUNCE),
+		transactionID,
+		infoHash,
+		peerID,
+		int64(0),
+		int64(0),
+		int64(0),
+		int32(2),
+		int32(0),
+		int32(0),
+		int32(50),
+		int16(port),
+	}
+
+	for _, v := range data {
+		binary.Write(announce, binary.BigEndian, v)
+	}
+	fmt.Println(fmt.Sprintf("%x", announce.Bytes()))
+	socket.WriteToUDP(announce.Bytes(), serverAddr)
+	n, addr, err = socket.ReadFromUDP(buf2)
+	buf2 = buf2[0:n]
+	fmt.Println("Received ", fmt.Sprintf("%x", buf2), " from ", addr, tracker)
+	if err != nil {
+		fmt.Println("Error: ", err)
+		return
+	}
+	answer = bytes.NewReader(buf2)
+	var a int32
+	var t int32
+	var i int32
+	var l int32
+	var s int32
+	binary.Read(answer, binary.BigEndian, &a)
+	binary.Read(answer, binary.BigEndian, &t)
+	binary.Read(answer, binary.BigEndian, &i)
+	binary.Read(answer, binary.BigEndian, &l)
+	binary.Read(answer, binary.BigEndian, &s)
+	for answer.Len() > 0 {
+		peer := NewPeer(answer)
+		if peer.Port == 0 {
+			continue
+		}
+		ch <- peer
+	}
+	done <- 0
+}
+
+func (d *Downloader) announceTracker(ch chan *Peer, done chan int, tracker string) {
+	// d.returnLocalhost(ch, done)
+	// yellow := color.New(color.FgYellow).SprintFunc()
+	// red := color.New(color.FgRed).SprintFunc()
+	d.Trackers = append(d.Trackers, tracker)
+	if strings.HasPrefix(tracker, "http://") {
+		d.announceHTTP(ch, done, tracker)
+	} else if strings.HasPrefix(tracker, "udp://") {
+		d.announceUDP(ch, done, tracker)
+	}
 }

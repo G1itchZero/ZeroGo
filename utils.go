@@ -33,8 +33,8 @@ func createCerts() {
 	template := &x509.Certificate{
 		IsCA: true,
 		BasicConstraintsValid: true,
-		SubjectKeyId:          []byte{1, 2, 3},
-		SerialNumber:          big.NewInt(1234),
+		SubjectKeyId:          []byte{4, 8, 3},
+		SerialNumber:          big.NewInt(9899),
 		Subject: pkix.Name{
 			Country:      []string{"Earth"},
 			Organization: []string{"Mother Nature"},
@@ -111,9 +111,9 @@ func getTrackers() []string {
 	trackers := []string{
 		// "zero://boot3rdez4rzn36x.onion:15441",
 		// "zero://boot.zeronet.io#f36ca555bee6ba216b14d10f38c16f7769ff064e0e37d887603548cc2e64191d:15441",
-		// "udp://tracker.coppersurfer.tk:6969",
-		// "udp://tracker.leechers-paradise.org:6969",
-		// "udp://9.rarbg.com:2710",
+		"udp://tracker.coppersurfer.tk:6969",
+		"udp://tracker.leechers-paradise.org:6969",
+		"udp://9.rarbg.com:2710",
 		"http://tracker.tordb.ml:6881/announce",
 		"http://explodie.org:6969/announce",
 		"http://tracker1.wasabii.com.tw:6969/announce",
