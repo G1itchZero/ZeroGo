@@ -95,6 +95,7 @@ func createCerts() {
 
 func main() {
 	DATA = path.Join(".", "data")
+	os.MkdirAll(DATA, 0777)
 	createCerts()
 	PEER_ID = fmt.Sprintf("-ZN0%s-GO%s", strings.Replace(VERSION, ".", "", -1), randomString(10))
 	log.WithFields(log.Fields{

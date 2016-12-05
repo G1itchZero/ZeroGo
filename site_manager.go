@@ -66,10 +66,12 @@ func (sm *SiteManager) GetSites() *gabs.Container {
 
 func (sm *SiteManager) updateSites() {
 	s, _ := loadSites()
-	sites, _ := s.ChildrenMap()
-	for address := range sites {
-		fmt.Println("preload", address)
-		sm.Sites[address] = NewSite(address, sm)
+	if s != nil {
+		sites, _ := s.ChildrenMap()
+		for address := range sites {
+			fmt.Println("preload", address)
+			sm.Sites[address] = NewSite(address, sm)
+		}
 	}
 }
 
