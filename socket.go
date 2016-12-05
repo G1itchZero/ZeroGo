@@ -61,55 +61,70 @@ func (socket *UiSocket) Serve(ws *websocket.Conn) {
 		}
 		message := Message{}
 		err = json.Unmarshal(data, &message)
-		// log.WithFields(log.Fields{
-		// 	"site":        socket.Site.Address,
-		// 	"wrapper_key": socket.WrapperKey,
-		// 	"massage":     message,
-		// }).Info("Message")
+		if err != nil {
+			continue
+		}
+		log.WithFields(log.Fields{
+			"site":        socket.Site.Address,
+			"wrapper_key": socket.WrapperKey,
+			"massage":     message,
+		}).Info("Message")
 
 		switch message.Cmd {
 		case "fileQuery":
-			filename := message.Params.([]interface{})[0].(string)
-			content, _ := socket.Site.GetFile(filename)
-			if strings.HasSuffix(filename, ".json") {
-				jsonContent, _ := gabs.ParseJSON(content)
-				socket.Response(message.ID, []interface{}{jsonContent.Data()})
-			} else {
-				socket.Response(message.ID, []interface{}{string(content)})
-			}
+			socket.fileQuery(message)
 		case "siteDelete":
-			socket.Site.Manager.Remove(message.Params.(map[string]interface{})["address"].(string))
-			socket.Notification("done", "Site deleted.")
+			socket.siteDelete(message)
 		case "siteInfo":
 			socket.Site.Wait()
 			socket.Response(message.ID, socket.Site.GetInfo())
 		case "siteList":
-			sites := []SiteInfo{}
-			infos, _ := socket.Site.Manager.GetSites().ChildrenMap()
-			for _, site := range infos {
-				sites = append(sites, site.Data().(SiteInfo))
-			}
-			socket.Response(message.ID, sites)
+			socket.siteList(message)
 		case "serverInfo":
 			socket.Response(message.ID, GetServerInfo())
 		case "feedQuery":
-			socket.Response(message.ID, []Post{
-				{
-					Body:      "@ZeroNet: Go, go, go!",
-					Title:     "Project info",
-					FeedName:  "Golang ZeroNet",
-					Type:      "comment",
-					DateAdded: int(time.Now().Unix()),
-					URL:       "",
-					Site:      socket.Site.Address,
-				},
-			})
+			socket.feedQuery(message)
 		}
 	}
+}
 
-	// c.OnMessage(func(data []byte) {
-	//
-	// })
+func (socket *UiSocket) siteDelete(message Message) {
+	socket.Site.Manager.Remove(message.Params.(map[string]interface{})["address"].(string))
+	socket.Notification("done", "Site deleted.")
+}
+
+func (socket *UiSocket) siteList(message Message) {
+	sites := []SiteInfo{}
+	infos, _ := socket.Site.Manager.GetSites().ChildrenMap()
+	for _, site := range infos {
+		sites = append(sites, site.Data().(SiteInfo))
+	}
+	socket.Response(message.ID, sites)
+}
+
+func (socket *UiSocket) fileQuery(message Message) {
+	filename := message.Params.([]interface{})[0].(string)
+	content, _ := socket.Site.GetFile(filename)
+	if strings.HasSuffix(filename, ".json") {
+		jsonContent, _ := gabs.ParseJSON(content)
+		socket.Response(message.ID, []interface{}{jsonContent.Data()})
+	} else {
+		socket.Response(message.ID, []interface{}{string(content)})
+	}
+}
+
+func (socket *UiSocket) feedQuery(message Message) {
+	socket.Response(message.ID, []Post{
+		{
+			Body:      "@ZeroNet: Go, go, go!",
+			Title:     "Project info",
+			FeedName:  "Golang ZeroNet",
+			Type:      "comment",
+			DateAdded: int(time.Now().Unix()),
+			URL:       "",
+			Site:      socket.Site.Address,
+		},
+	})
 }
 
 func (socket *UiSocket) Notification(notificationType string, text string) {

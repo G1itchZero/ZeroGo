@@ -17,6 +17,7 @@ type SiteEvent struct {
 
 type Site struct {
 	Address    string
+	Path       string
 	Content    *gabs.Container
 	Done       chan *Site
 	Downloader *Downloader
@@ -31,6 +32,7 @@ func NewSite(address string, sm *SiteManager) *Site {
 	done := make(chan *Site, 2)
 	site := Site{
 		Address:    address,
+		Path:       path.Join(DATA, address),
 		Done:       done,
 		Downloader: NewDownloader(address),
 		Manager:    sm,
@@ -60,7 +62,7 @@ func (site *Site) Download(ch chan *Site) {
 }
 
 func (site *Site) GetFile(filename string) ([]byte, error) {
-	content, err := ioutil.ReadFile(path.Join(DATA, site.Address, filename))
+	content, err := ioutil.ReadFile(path.Join(site.Path, filename))
 	if err == nil {
 		return content, nil
 	}
@@ -68,9 +70,9 @@ func (site *Site) GetFile(filename string) ([]byte, error) {
 }
 
 func (site *Site) Remove() {
-	err := os.RemoveAll(path.Join(DATA, site.Address))
+	err := os.RemoveAll(site.Path)
 	if err != nil {
-		log.Println(path.Join(DATA, site.Address), err)
+		log.Println(site.Path, err)
 	}
 }
 
