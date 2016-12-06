@@ -67,11 +67,6 @@ func (s *Server) socketHandler(c echo.Context) error {
 
 func (s *Server) Serve() {
 	e := echo.New()
-	t := &Template{
-		templates: template.Must(template.ParseGlob("./template/*.html")),
-	}
-	e.Renderer = t
-
 	e.Static("/uimedia", "./media")
 
 	inner := e.Group("/inner")
@@ -100,28 +95,10 @@ func (s *Server) serveWrapper(ctx echo.Context) error {
 	site := s.Sites.Get(url)
 	fmt.Println(fmt.Sprintf("> %s", yellow(url)))
 	s.Queue[url] = site
-	nonce := randomString(36)
-	wrapperKey := randomString(36)
-	title := site.Address
-	if site.Content != nil {
-		title = site.Content.S("title").Data().(string)
-	}
-	err := ctx.Render(http.StatusOK, "wrapper", map[string]interface{}{
-		"rev":                REV,
-		"title":              title,
-		"file_url":           "/inner/" + site.Address,
-		"address":            site.Address,
-		"file_inner_path":    "index.html",
-		"show_loadingscreen": true,
-		// "permissions":        []string{"ADMIN"},
-		"lang":          "en",
-		"query_string":  "?wrapper_nonce=" + nonce,
-		"wrapper_nonce": nonce,
-		"wrapper_key":   wrapperKey,
-		"homepage":      "/" + ZN_HOMEPAGE,
-	})
-	socket := NewUiSocket(site, wrapperKey)
-	s.Sockets[wrapperKey] = socket
+	wrapper := NewWrapper(site)
+	err := wrapper.Render(ctx)
+	socket := NewUiSocket(site, wrapper.Key)
+	s.Sockets[wrapper.Key] = socket
 	return err
 }
 
@@ -145,12 +122,6 @@ func (s *Server) serveInnerStatic(ctx echo.Context) error {
 func serveStatic(ctx echo.Context, p string) error {
 	fmt.Println(p)
 	return ctx.File(p)
-	// if strings.HasSuffix(p, ".css") {
-	// 	ctx.SetHeader("Content-Type", "text/css")
-	// }
-	// if strings.HasSuffix(p, ".js") {
-	// 	ctx.SetHeader("Content-Type", "text/javascript")
-	// }
 }
 
 type Template struct {

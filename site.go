@@ -139,7 +139,7 @@ func (site *Site) GetInfo() SiteInfo {
 		// AuthKeySha512:  "",
 		// AuthKey:        "",
 		BadFiles:       0,
-		StartedTaskNum: 0,
+		StartedTaskNum: len(site.Downloader.Peers.BusyPeers),
 		ContentUpdated: 0,
 	}
 }

@@ -14,12 +14,14 @@ import (
 )
 
 type FileTask struct {
-	Filename string
-	Hash     string  `json:"sha512"`
-	Size     float64 `json:"size"`
-	Content  []byte
+	Site       string
+	Filename   string
+	Hash       string  `json:"sha512"`
+	Size       float64 `json:"size"`
+	Downloaded float64
+	Content    []byte
 }
-type Tasks []FileTask
+type Tasks []*FileTask
 
 type Downloader struct {
 	Address          string
@@ -64,11 +66,12 @@ func (d *Downloader) Download(done chan int) bool {
 	os.MkdirAll(dir, 0777)
 
 	d.ContentRequested = false
-	d.Queue = []FileTask{FileTask{
+	d.Queue = Tasks{&FileTask{
 		Filename: "content.json",
+		Site:     d.Address,
 	}}
 
-	files := make(chan FileTask, 100)
+	files := make(chan *FileTask, 100)
 	inbox := d.Peers.OnPeers
 	announce := d.Peers.OnAnnounce
 	go d.Peers.Announce()
@@ -79,7 +82,7 @@ func (d *Downloader) Download(done chan int) bool {
 	for d.InProgress {
 		select {
 		case file := <-files:
-			if file.Filename == "" {
+			if file == nil {
 				break
 			}
 			fCount++
@@ -141,7 +144,7 @@ func (d *Downloader) GetContent() (*gabs.Container, error) {
 	return loadJSON(filename)
 }
 
-func (d *Downloader) processContent() FileTask {
+func (d *Downloader) processContent() *FileTask {
 	d.ContentRequested = true
 	task := d.schedileFile(d.Address)
 	content, _ := gabs.ParseJSON(task.Content)
@@ -149,10 +152,11 @@ func (d *Downloader) processContent() FileTask {
 	files, _ := content.S("files").ChildrenMap()
 	for filename, child := range files {
 		file := child.Data().(map[string]interface{})
-		d.Queue = append(d.Queue, FileTask{
+		d.Queue = append(d.Queue, &FileTask{
 			Filename: filename,
 			Hash:     file["sha512"].(string),
 			Size:     file["size"].(float64),
+			Site:     d.Address,
 		})
 	}
 	d.TotalFiles = len(files) + 1
@@ -160,13 +164,13 @@ func (d *Downloader) processContent() FileTask {
 
 }
 
-func (d *Downloader) schedileFile(site string) FileTask {
+func (d *Downloader) schedileFile(site string) *FileTask {
 	if len(d.Queue) == 0 {
-		return FileTask{}
+		return nil
 	}
 	peer := d.Peers.Get()
 	if peer == nil {
-		return FileTask{}
+		return nil
 	}
 	task := d.Queue[0]
 	filename := path.Join(DATA, site, task.Filename)
@@ -180,7 +184,7 @@ func (d *Downloader) schedileFile(site string) FileTask {
 		"peer": peer,
 	}).Info("Requesting file")
 	d.Queue = d.Queue[1:]
-	file := peer.Download(site, task.Filename)
+	file := peer.Download(task)
 	d.Done = append(d.Done, task)
 	d.Peers.Free(peer)
 	task.Content = file

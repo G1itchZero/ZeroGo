@@ -63,6 +63,7 @@ type Peer struct {
 	Port       uint64
 	Connection *tls.Conn
 	ReqID      int
+	Tasks      Tasks
 }
 
 func (peer *Peer) send(request Request) Response {
@@ -81,7 +82,11 @@ func (peer *Peer) send(request Request) Response {
 		answer.Buffer = []byte{}
 		left := answer.StreamBytes
 		for left > 0 {
-			n, _ := peer.Connection.Read(message)
+			n, err := peer.Connection.Read(message)
+			if err != nil {
+				fmt.Println("File streaming error", err)
+				break
+			}
 			left = left - n
 			answer.Buffer = append(answer.Buffer, message...)
 		}
@@ -90,15 +95,18 @@ func (peer *Peer) send(request Request) Response {
 	return answer
 }
 
-func (peer *Peer) Download(site string, inner_path string) []byte {
-	filename := path.Join(DATA, site, inner_path)
+func (peer *Peer) Download(task *FileTask) []byte {
+	peer.Tasks = append(peer.Tasks, task)
+	site := task.Site
+	innerPath := task.Filename
+	filename := path.Join(DATA, site, innerPath)
 	os.MkdirAll(path.Dir(filename), 0777)
 	location := 0
 	request := Request{
 		Cmd: "streamFile",
 		Params: RequestFile{
 			Site:      site,
-			InnerPath: inner_path,
+			InnerPath: innerPath,
 			Location:  location,
 		},
 	}
