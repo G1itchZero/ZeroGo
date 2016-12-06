@@ -8,6 +8,7 @@ import (
 	"io/ioutil"
 	"os"
 	"path"
+	"time"
 
 	_ "github.com/Sirupsen/logrus"
 	msgpack "gopkg.in/vmihailenco/msgpack.v2"
@@ -154,6 +155,12 @@ func (peer *Peer) Connect() error {
 		peer.Connection = conn
 		peer.State = Connected
 		peer.Handshake()
+		ticker := time.NewTicker(time.Second * 5)
+		go func() {
+			for _ = range ticker.C {
+				peer.Ping()
+			}
+		}()
 	}
 	return err
 }

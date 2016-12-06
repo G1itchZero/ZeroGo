@@ -79,7 +79,7 @@ func loadSites() (*gabs.Container, error) {
 	filename := path.Join(DATA, "sites.json")
 	if _, err := os.Stat(filename); err != nil {
 		jsonObj := gabs.New()
-		ioutil.WriteFile(filename, []byte(jsonObj.String()), 644)
+		ioutil.WriteFile(filename, []byte(jsonObj.String()), 666)
 	}
 	return loadJSON(filename)
 }

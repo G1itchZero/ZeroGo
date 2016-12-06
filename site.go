@@ -39,7 +39,15 @@ func NewSite(address string, sm *SiteManager) *Site {
 		Ready:      false,
 		Success:    false,
 	}
-	site.OnChanges = site.Downloader.OnChanges
+	// site.OnChanges = site.Downloader.OnChanges
+	// go func() {
+	// 	for {
+	// 		select {
+	// 		case event := <-site.Downloader.OnChanges:
+	// 			log.Fatal(event)
+	// 		}
+	// 	}
+	// }()
 	site.Content, _ = site.Downloader.GetContent()
 	return &site
 }
@@ -79,7 +87,7 @@ func (site *Site) Remove() {
 func (site *Site) Wait() {
 	for !site.Ready {
 		time.Sleep(time.Microsecond)
-		print(".")
+		// print(".")
 	}
 }
 
@@ -100,7 +108,7 @@ func (site *Site) GetSettings() SiteSettings {
 		BytesRecv:          size,
 		OptionalDownloaded: 0,
 		BytesSent:          0,
-		Peers:              len(site.Downloader.FreePeers),
+		Peers:              site.Downloader.Peers.Count,
 		Modified:           modified,
 		SizeOptional:       0,
 		Serving:            false,
@@ -119,10 +127,10 @@ func (site *Site) GetInfo() SiteInfo {
 	return SiteInfo{
 		Address:  site.Address,
 		Files:    site.Downloader.TotalFiles - 1,
-		Peers:    len(site.Downloader.FreePeers),
+		Peers:    site.Downloader.Peers.Count,
 		Content:  content,
-		Workers:  len(site.Downloader.BusyPeers),
-		Tasks:    len(site.Downloader.BusyPeers),
+		Workers:  len(site.Downloader.Peers.BusyPeers),
+		Tasks:    len(site.Downloader.Peers.BusyPeers),
 		Settings: site.GetSettings(),
 
 		SizeLimit:     100,

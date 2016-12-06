@@ -1,25 +1,14 @@
 package main
 
 import (
-	"bytes"
-	"crypto/sha1"
-	"encoding/binary"
 	"errors"
 	"fmt"
-	r "math/rand"
-	"net"
-	"net/http"
 	"os"
 	"path"
-	"strconv"
-	"strings"
 	"sync"
-	"time"
 
 	"github.com/Jeffail/gabs"
 	"github.com/fatih/color"
-	"github.com/google/go-querystring/query"
-	bencode "github.com/jackpal/bencode-go"
 
 	log "github.com/Sirupsen/logrus"
 )
@@ -32,11 +21,9 @@ type FileTask struct {
 }
 type Tasks []FileTask
 
-type Peers []*Peer
 type Downloader struct {
 	Address          string
-	FreePeers        Peers
-	BusyPeers        Peers
+	Peers            *PeerManager
 	Queue            Tasks
 	Done             Tasks
 	ContentRequested bool
@@ -44,7 +31,6 @@ type Downloader struct {
 	TotalFiles       int
 	OnChanges        chan SiteEvent
 	InProgress       bool
-	Trackers         []string
 	sync.Mutex
 }
 
@@ -60,22 +46,11 @@ type Announce struct {
 	Event      string `url:"event"`
 }
 
-func NewAnnounce(address string, tracker string) Announce {
-	return Announce{
-		InfoHash: fmt.Sprintf("%s", sha1.Sum([]byte(address))),
-		PeerID:   PEER_ID,
-		Port:     0, //15441,
-		Uploaded: 0, Downloaded: 0,
-		Left: 0, Compact: 1, NumWant: 30,
-		Event: "started",
-	}
-}
-
 func NewDownloader(address string) *Downloader {
 	d := Downloader{
+		Peers:     NewPeerManager(address),
 		Address:   address,
-		OnChanges: make(chan SiteEvent, 10),
-		Trackers:  []string{},
+		OnChanges: make(chan SiteEvent, 400),
 	}
 	return &d
 }
@@ -85,9 +60,6 @@ func (d *Downloader) Download(done chan int) bool {
 	green := color.New(color.FgGreen).SprintFunc()
 	fmt.Println(fmt.Sprintf("Download site: %s", green(d.Address)))
 
-	d.FreePeers = Peers{}
-	d.BusyPeers = Peers{}
-
 	dir := path.Join(DATA, d.Address)
 	os.MkdirAll(dir, 0777)
 
@@ -96,13 +68,10 @@ func (d *Downloader) Download(done chan int) bool {
 		Filename: "content.json",
 	}}
 
-	inbox := make(chan *Peer)
-	announce := make(chan int)
-	files := make(chan FileTask)
-	trackers := getTrackers()
-	for _, tracker := range trackers {
-		go d.announceTracker(inbox, announce, tracker)
-	}
+	files := make(chan FileTask, 100)
+	inbox := d.Peers.OnPeers
+	announce := d.Peers.OnAnnounce
+	go d.Peers.Announce()
 	// announced := false
 	tCount := 0
 	fCount := 1
@@ -113,11 +82,12 @@ func (d *Downloader) Download(done chan int) bool {
 			if file.Filename == "" {
 				break
 			}
+			fCount++
+			d.OnChanges <- SiteEvent{"file_done", file.Filename}
 			log.WithFields(log.Fields{
 				"file": file.Filename,
 			}).Infof("Task completed [%d/%d] in q: %d", fCount, len(d.Queue)+len(d.Done), len(d.Queue))
-			fCount++
-			go func() { d.OnChanges <- SiteEvent{"file_done", file.Filename} }()
+			// log.Fatal("")
 			if len(d.Queue) > 0 {
 				go func() {
 					d.Lock()
@@ -128,23 +98,10 @@ func (d *Downloader) Download(done chan int) bool {
 				fmt.Println("Site downloaded.")
 				d.InProgress = false
 				break
-				return success
-				// os.Exit(0)
 			}
 		case peer := <-inbox:
 			// go func() { d.OnChanges <- 0 }()
-			fmt.Println(peer.Address, peer.Port)
-			go func() { d.OnChanges <- SiteEvent{"peers_added", 1} }()
-			if d.peerIsKnown(peer) {
-				continue
-			}
 			go func(peer *Peer) {
-				d.connectPeer(peer)
-				if peer.State != Connected {
-					return
-				}
-
-				d.FreePeers = append(d.FreePeers, peer)
 				if !d.ContentRequested {
 					d.Lock()
 					files <- d.processContent()
@@ -159,14 +116,14 @@ func (d *Downloader) Download(done chan int) bool {
 					d.Unlock()
 				}
 			}(peer)
-		case _ = <-announce:
+		case c := <-announce:
 			//TODO: waiting for connections
+			go func() { d.OnChanges <- SiteEvent{"peers_added", c} }()
 			tCount++
-			if tCount == len(trackers) && len(d.FreePeers)+len(d.BusyPeers) == 0 {
+			if tCount == len(d.Peers.Trackers) && d.Peers.Count == 0 {
 				fmt.Println("No peers founded.")
 				d.InProgress = false
 				break
-				return false
 			}
 		}
 	}
@@ -174,20 +131,6 @@ func (d *Downloader) Download(done chan int) bool {
 	done <- 0
 	return success
 	// fmt.Printf("Peers: %s", yellow(len(d.Peers)))
-}
-
-func (d *Downloader) connectPeer(peer *Peer) {
-	err := peer.Connect()
-	if err == nil {
-		// fmt.Println(fmt.Sprintf("Connection established: %s:%d", peer.Address, peer.Port))
-		peer.Ping()
-	} else {
-		// log.WithFields(log.Fields{
-		// 	"error": err,
-		// 	"peer":  peer,
-		// }).Warn("Connection error")
-		d.removeFreePeer(peer)
-	}
 }
 
 func (d *Downloader) GetContent() (*gabs.Container, error) {
@@ -221,7 +164,10 @@ func (d *Downloader) schedileFile(site string) FileTask {
 	if len(d.Queue) == 0 {
 		return FileTask{}
 	}
-	peer := d.FreePeers[0]
+	peer := d.Peers.Get()
+	if peer == nil {
+		return FileTask{}
+	}
 	task := d.Queue[0]
 	filename := path.Join(DATA, site, task.Filename)
 	if _, err := os.Stat(filename); err == nil && task.Filename != "content.json" {
@@ -233,199 +179,10 @@ func (d *Downloader) schedileFile(site string) FileTask {
 		"task": task,
 		"peer": peer,
 	}).Info("Requesting file")
-	d.removeFreePeer(peer)
-	d.BusyPeers = append(d.BusyPeers, peer)
 	d.Queue = d.Queue[1:]
 	file := peer.Download(site, task.Filename)
 	d.Done = append(d.Done, task)
-	d.removeBusyPeer(peer)
-	d.FreePeers = append(d.FreePeers, peer)
+	d.Peers.Free(peer)
 	task.Content = file
 	return task
-}
-
-func (d *Downloader) removeFreePeer(peer *Peer) {
-	i := func() int {
-		i := 0
-		for _, b := range d.FreePeers {
-			if b.Address == peer.Address {
-				return i
-			}
-			i++
-		}
-		return -1
-	}()
-	if i == -1 {
-		return
-	}
-	d.FreePeers = append(d.FreePeers[:i], d.FreePeers[i+1:]...)
-}
-
-func (d *Downloader) removeBusyPeer(peer *Peer) {
-	i := func() int {
-		i := 0
-		for _, b := range d.BusyPeers {
-			if b.Address == peer.Address {
-				return i
-			}
-			i++
-		}
-		return -1
-	}()
-	if i == -1 {
-		return
-	}
-	d.BusyPeers = append(d.BusyPeers[:i], d.BusyPeers[i+1:]...)
-}
-
-func (d *Downloader) peerIsKnown(peer *Peer) bool {
-	for _, b := range d.FreePeers {
-		if b.Address == peer.Address {
-			return true
-		}
-	}
-	return false
-}
-
-func (d *Downloader) returnLocalhost(ch chan *Peer, done chan int) {
-	peer := Peer{Address: "192.168.1.38", Port: 15441}
-	ch <- &peer
-	done <- 0
-	return
-}
-
-func (d *Downloader) announceHTTP(ch chan *Peer, done chan int, tracker string) {
-	params, _ := query.Values(NewAnnounce(d.Address, tracker))
-	url := fmt.Sprintf("%s?%s", tracker, params.Encode())
-	log.WithFields(log.Fields{
-		"tracker": tracker,
-		"params":  params,
-	}).Info("Announce tracker")
-	resp, _ := http.Get(url)
-	raw, _ := bencode.Decode(resp.Body)
-	resp.Body.Close()
-	data := raw.(map[string]interface{})
-	peerData, _ := GetBytes(data["peers"])
-	peerReader := bytes.NewReader(peerData)
-	peerCount := len(peerData) / 6
-	for i := 0; i < peerCount; i++ {
-		peer := NewPeer(peerReader)
-		if peer.Port == 0 {
-			continue
-		}
-		ch <- peer
-	}
-	done <- 0
-}
-
-const (
-	UDP_REQUEST_CONNECT  = 0
-	UDP_REQUEST_ANNOUNCE = 1
-)
-
-func (d *Downloader) announceUDP(ch chan *Peer, done chan int, tracker string) {
-	serverAddr, err := net.ResolveUDPAddr("udp", strings.Replace(tracker, "udp://", "", 1))
-	connectionID := int64(0x41727101980)
-	port := r.Intn(99) + 6800
-	rnd := r.New(r.NewSource(time.Now().UnixNano()))
-	transactionID := rnd.Int31()
-	sid := "-ZN" + strconv.Itoa(os.Getpid()) + "_" + strconv.FormatInt(rnd.Int63(), 10)
-	peerID := sid[0:20]
-	infoHash := sha1.Sum([]byte(d.Address))
-	fmt.Println(fmt.Sprintf("%x", sha1.Sum([]byte(d.Address))))
-	conn, err := net.ListenPacket("udp4", fmt.Sprintf(":%d", port))
-	if err != nil {
-		return
-	}
-	socket := conn.(*net.UDPConn)
-	defer socket.Close()
-
-	err = socket.SetDeadline(time.Now().Add(9 * time.Second))
-
-	request := new(bytes.Buffer)
-	var data = []interface{}{
-		connectionID,
-		int32(UDP_REQUEST_CONNECT),
-		transactionID,
-	}
-	for _, v := range data {
-		binary.Write(request, binary.BigEndian, v)
-	}
-	socket.WriteToUDP(request.Bytes(), serverAddr)
-	buf := make([]byte, 16)
-	buf2 := make([]byte, 10240)
-	n, addr, err := socket.ReadFromUDP(buf)
-	fmt.Println("Received ", fmt.Sprintf("%x", buf[0:n]), " from ", addr)
-	if err != nil {
-		fmt.Println("Error: ", err)
-		return
-	}
-	answer := bytes.NewReader(buf)
-	var resp_a int32
-	var resp_t int32
-	var resp_c int64
-	binary.Read(answer, binary.BigEndian, &resp_a)
-	binary.Read(answer, binary.BigEndian, &resp_t)
-	binary.Read(answer, binary.BigEndian, &resp_c)
-	fmt.Println(resp_a, resp_t, resp_c)
-	announce := new(bytes.Buffer)
-	data = []interface{}{
-		resp_c,
-		int32(UDP_REQUEST_ANNOUNCE),
-		transactionID,
-		infoHash,
-		peerID,
-		int64(0),
-		int64(0),
-		int64(0),
-		int32(2),
-		int32(0),
-		int32(0),
-		int32(50),
-		int16(port),
-	}
-
-	for _, v := range data {
-		binary.Write(announce, binary.BigEndian, v)
-	}
-	fmt.Println(fmt.Sprintf("%x", announce.Bytes()))
-	socket.WriteToUDP(announce.Bytes(), serverAddr)
-	n, addr, err = socket.ReadFromUDP(buf2)
-	buf2 = buf2[0:n]
-	fmt.Println("Received ", fmt.Sprintf("%x", buf2), " from ", addr, tracker)
-	if err != nil {
-		fmt.Println("Error: ", err)
-		return
-	}
-	answer = bytes.NewReader(buf2)
-	var a int32
-	var t int32
-	var i int32
-	var l int32
-	var s int32
-	binary.Read(answer, binary.BigEndian, &a)
-	binary.Read(answer, binary.BigEndian, &t)
-	binary.Read(answer, binary.BigEndian, &i)
-	binary.Read(answer, binary.BigEndian, &l)
-	binary.Read(answer, binary.BigEndian, &s)
-	for answer.Len() > 0 {
-		peer := NewPeer(answer)
-		if peer.Port == 0 {
-			continue
-		}
-		ch <- peer
-	}
-	done <- 0
-}
-
-func (d *Downloader) announceTracker(ch chan *Peer, done chan int, tracker string) {
-	// d.returnLocalhost(ch, done)
-	// yellow := color.New(color.FgYellow).SprintFunc()
-	// red := color.New(color.FgRed).SprintFunc()
-	d.Trackers = append(d.Trackers, tracker)
-	if strings.HasPrefix(tracker, "http://") {
-		d.announceHTTP(ch, done, tracker)
-	} else if strings.HasPrefix(tracker, "udp://") {
-		d.announceUDP(ch, done, tracker)
-	}
 }

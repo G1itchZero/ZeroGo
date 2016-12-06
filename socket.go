@@ -29,16 +29,6 @@ func NewUiSocket(site *Site, wrapperKey string) *UiSocket {
 		Site:         site,
 		MsgID:        1,
 	}
-	go func() {
-		for event := range site.OnChanges {
-			if socket.Connection != nil {
-				socket.Site.Wait()
-				info := socket.Site.GetInfo()
-				info.Event = []interface{}{event.Type, event.Payload}
-				socket.Cmd("setSiteInfo", info)
-			}
-		}
-	}()
 	return &socket
 }
 
@@ -50,6 +40,18 @@ func (socket *UiSocket) Serve(ws *websocket.Conn) {
 	// 	"site":        socket.Site.Address,
 	// 	"wrapper_key": socket.WrapperKey,
 	// }).Info("New socket connection")
+	go func() {
+		for {
+			select {
+			case event := <-socket.Site.Downloader.OnChanges:
+				fmt.Println(event)
+				// socket.Site.Wait()
+				info := socket.Site.GetInfo()
+				info.Event = []interface{}{event.Type, event.Payload}
+				socket.Cmd("setSiteInfo", info)
+			}
+		}
+	}()
 	for {
 		_, data, err := ws.ReadMessage()
 		if err != nil {
@@ -72,18 +74,20 @@ func (socket *UiSocket) Serve(ws *websocket.Conn) {
 
 		switch message.Cmd {
 		case "fileQuery":
-			socket.fileQuery(message)
+			go socket.fileQuery(message)
 		case "siteDelete":
-			socket.siteDelete(message)
+			go socket.siteDelete(message)
 		case "siteInfo":
-			socket.Site.Wait()
-			socket.Response(message.ID, socket.Site.GetInfo())
+			go func(message Message) {
+				// socket.Site.Wait()
+				socket.Response(message.ID, socket.Site.GetInfo())
+			}(message)
 		case "siteList":
-			socket.siteList(message)
+			go socket.siteList(message)
 		case "serverInfo":
-			socket.Response(message.ID, GetServerInfo())
+			go socket.Response(message.ID, GetServerInfo())
 		case "feedQuery":
-			socket.feedQuery(message)
+			go socket.feedQuery(message)
 		}
 	}
 }
