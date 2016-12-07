@@ -5,7 +5,7 @@ import (
 	"log"
 	"os"
 	"path"
-	"time"
+	"sync"
 
 	"github.com/Jeffail/gabs"
 )
@@ -26,6 +26,7 @@ type Site struct {
 	Ready      bool
 	Success    bool
 	OnChanges  chan SiteEvent
+	sync.Mutex
 }
 
 func NewSite(address string, sm *SiteManager) *Site {
@@ -53,9 +54,11 @@ func NewSite(address string, sm *SiteManager) *Site {
 }
 
 func (site *Site) Download(ch chan *Site) {
+	site.Lock()
 	site.Done = ch
 	if site.Downloader.TotalFiles != 0 && len(site.Downloader.Done) == site.Downloader.TotalFiles {
 		site.Ready = true
+		site.Unlock()
 		site.Done <- site
 		return
 	}
@@ -66,6 +69,7 @@ func (site *Site) Download(ch chan *Site) {
 	<-done
 	site.Content = site.Downloader.Content
 	site.Ready = true
+	site.Unlock()
 	site.Done <- site
 }
 
@@ -85,10 +89,8 @@ func (site *Site) Remove() {
 }
 
 func (site *Site) Wait() {
-	for !site.Ready {
-		time.Sleep(time.Microsecond)
-		// print(".")
-	}
+	site.Lock()
+	site.Unlock()
 }
 
 func (site *Site) GetSettings() SiteSettings {

@@ -6,8 +6,11 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
+	"math"
+	"net"
 	"os"
 	"path"
+	"sync"
 	"time"
 
 	_ "github.com/Sirupsen/logrus"
@@ -64,35 +67,70 @@ type Peer struct {
 	Connection *tls.Conn
 	ReqID      int
 	Tasks      Tasks
+	Cancel     chan struct{}
+	buffers    map[int][]byte
+	chans      map[int]chan Response
+	Ticker     *time.Ticker
+	Listening  bool
+	sync.Mutex
 }
 
 func (peer *Peer) send(request Request) Response {
 	request.ReqID = peer.ReqID
-	// log.WithFields(log.Fields{"request": request}).Info("Sending")
 	data, _ := msgpack.Marshal(request)
-	_, _ = peer.Connection.Write(data)
+	peer.Connection.Write(data)
+	peer.buffers[request.ReqID] = []byte{}
+	peer.chans[request.ReqID] = make(chan Response)
 	peer.ReqID++
+	// log.WithFields(log.Fields{"request": request}).Info("Sending")
+	return <-peer.chans[request.ReqID]
+}
 
-	message := make([]byte, 1024*16)
-	_, _ = peer.Connection.Read(message)
-	answer := Response{}
-	msgpack.Unmarshal(message, &answer)
-	// log.WithFields(log.Fields{"response": answer}).Info("Recv")
-	if answer.StreamBytes > 0 {
-		answer.Buffer = []byte{}
-		left := answer.StreamBytes
-		for left > 0 {
-			n, err := peer.Connection.Read(message)
-			if err != nil {
-				fmt.Println("File streaming error", err)
-				break
-			}
-			left = left - n
-			answer.Buffer = append(answer.Buffer, message...)
-		}
-		answer.Buffer = answer.Buffer[0:answer.StreamBytes]
+func (peer *Peer) Stop() {
+	fmt.Println(peer.Address, "stopping")
+	peer.Listening = false
+	if peer.Ticker != nil {
+		peer.Ticker.Stop()
 	}
-	return answer
+	if peer.Connection != nil {
+		peer.Connection.Close()
+	}
+}
+
+func (peer *Peer) handleAnswers() {
+	for peer.Listening {
+		dl := time.Now().Add(20 * time.Second)
+		peer.Connection.SetReadDeadline(dl)
+		fmt.Printf("Set deadline: %s %v\n", dl, peer.Listening)
+		message := make([]byte, 1024*16)
+		peer.Lock()
+		_, _ = peer.Connection.Read(message)
+		peer.Unlock()
+		answer := Response{}
+		msgpack.Unmarshal(message, &answer)
+		// log.WithFields(log.Fields{"answer": answer}).Info("Recv")
+		// log.WithFields(log.Fields{"rq_id": request.ReqID, "answ_to": answer.To}).Info("Recv")
+		if answer.StreamBytes > 0 {
+			left := answer.StreamBytes
+			buf := peer.buffers[answer.To]
+			for left > 0 {
+				peer.Lock()
+				n, err := peer.Connection.Read(message)
+				peer.Unlock()
+				if err != nil {
+					fmt.Println("File streaming error", err)
+					break
+				}
+				left = left - n
+				buf = append(buf, message...)
+			}
+			peer.buffers[answer.To] = buf[0:int(math.Min(float64(answer.StreamBytes), float64(len(buf))))]
+		}
+		peer.Lock()
+		answer.Buffer = peer.buffers[answer.To]
+		peer.Unlock()
+		peer.chans[answer.To] <- answer
+	}
 }
 
 func (peer *Peer) Download(task *FileTask) []byte {
@@ -112,7 +150,8 @@ func (peer *Peer) Download(task *FileTask) []byte {
 	}
 	message := peer.send(request)
 	ioutil.WriteFile(filename, message.Buffer, 0644)
-	return message.Buffer
+	task.Content = message.Buffer
+	return task.Content
 }
 
 func (peer *Peer) Ping() {
@@ -149,7 +188,11 @@ func (peer *Peer) Connect() error {
 	certFilename := path.Join(DATA, "cert-rsa.pem")
 	keyFilename := path.Join(DATA, "key-rsa.pem")
 	cert, err := tls.LoadX509KeyPair(certFilename, keyFilename)
-	conn, err := tls.Dial("tcp", fmt.Sprintf("%s:%d",
+	conn, err := tls.DialWithDialer(&net.Dialer{
+		Deadline: time.Now().Add(10 * time.Second),
+		Timeout:  time.Second * 5,
+		Cancel:   peer.Cancel,
+	}, "tcp", fmt.Sprintf("%s:%d",
 		peer.Address,
 		peer.Port), &tls.Config{
 		InsecureSkipVerify: true,
@@ -162,11 +205,18 @@ func (peer *Peer) Connect() error {
 	if err == nil {
 		peer.Connection = conn
 		peer.State = Connected
-		peer.Handshake()
-		ticker := time.NewTicker(time.Second * 5)
 		go func() {
-			for _ = range ticker.C {
-				peer.Ping()
+			peer.handleAnswers()
+		}()
+		peer.Handshake()
+		peer.Ticker = time.NewTicker(time.Second * 5)
+		go func() {
+			for _ = range peer.Ticker.C {
+				if peer.Listening {
+					peer.Ping()
+				} else {
+					return
+				}
 			}
 		}()
 	}
@@ -178,8 +228,11 @@ func NewPeer(info io.Reader) *Peer {
 	port := [2]byte{}
 	binary.Read(info, binary.BigEndian, &addr)
 	binary.Read(info, binary.BigEndian, &port)
-	peer := Peer{State: Disconnected}
+	peer := Peer{State: Disconnected, Cancel: make(chan struct{})}
+	peer.Listening = true
 	peer.Address = fmt.Sprintf("%d.%d.%d.%d", addr[0], addr[1], addr[2], addr[3])
 	peer.Port = binary.BigEndian.Uint64([]byte{0, 0, 0, 0, 0, 0, port[0], port[1]})
+	peer.buffers = map[int][]byte{}
+	peer.chans = map[int]chan Response{}
 	return &peer
 }

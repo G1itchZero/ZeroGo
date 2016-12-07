@@ -99,7 +99,6 @@ func (s *Server) serveWrapper(ctx echo.Context) error {
 	err := wrapper.Render(ctx)
 	socket := NewUiSocket(site, wrapper.Key)
 	s.Sockets[wrapper.Key] = socket
-	fmt.Println(err, wrapper, socket)
 	return err
 }
 

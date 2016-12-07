@@ -9,6 +9,7 @@ import (
 	"net"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	log "github.com/Sirupsen/logrus"
@@ -25,6 +26,7 @@ type PeerManager struct {
 	Trackers   []string
 	OnPeers    chan *Peer
 	OnAnnounce chan int
+	sync.Mutex
 }
 
 func NewPeerManager(address string) *PeerManager {
@@ -38,14 +40,36 @@ func NewPeerManager(address string) *PeerManager {
 	return &pm
 }
 
+func (pm *PeerManager) Stop() {
+	log.Println("peers stopping")
+	for _, peer := range pm.FreePeers {
+		peer.Stop()
+	}
+	for _, peer := range pm.BusyPeers {
+		peer.Stop()
+	}
+	// log.Fatal("peers stopped")
+}
+
 func (pm *PeerManager) Get() *Peer {
 	if len(pm.FreePeers) == 0 && len(pm.BusyPeers) == 0 {
 		return nil
 	}
-	for len(pm.FreePeers) == 0 {
-		time.Sleep(1)
+	pm.Lock()
+	wait := 0
+	for len(pm.FreePeers) == 0 && wait < 100 {
+		time.Sleep(time.Microsecond * 5)
+		wait++
 	}
-	peer := pm.FreePeers[0]
+	var peer *Peer
+	if wait < 100 {
+		peer = pm.FreePeers[r.Intn(len(pm.FreePeers))]
+		pm.BusyPeers = append(pm.BusyPeers, peer)
+		pm.removeFreePeer(peer)
+	} else {
+		peer = pm.BusyPeers[r.Intn(len(pm.BusyPeers))]
+	}
+	pm.Unlock()
 	return peer
 }
 
@@ -66,6 +90,7 @@ func (pm *PeerManager) Announce() {
 				go func(peer *Peer) {
 					pm.connectPeer(peer)
 					if peer.State != Connected {
+						peer.Stop()
 						return
 					}
 					pm.FreePeers = append(pm.FreePeers, peer)

@@ -6,6 +6,9 @@ import (
 	"path"
 	"strings"
 
+	"net/http"
+	_ "net/http/pprof"
+
 	log "github.com/Sirupsen/logrus"
 )
 
@@ -26,11 +29,17 @@ func main() {
 	os.MkdirAll(DATA, 0777)
 	createCerts()
 	PEER_ID = fmt.Sprintf("-ZN0%s-GO%s", strings.Replace(VERSION, ".", "", -1), randomString(10))
-	log.SetLevel(log.DebugLevel)
+	log.SetLevel(log.InfoLevel)
+	// log.SetLevel(log.DebugLevel)
 	log.WithFields(log.Fields{
 		"id": PEER_ID,
 	}).Info("Your Peer ID")
 	sm := NewSiteManager()
+
+	go func() {
+		log.Println(http.ListenAndServe("localhost:6060", nil))
+	}()
+
 	server := NewServer(43111, sm)
 	server.Serve()
 }
