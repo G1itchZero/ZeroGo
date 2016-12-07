@@ -33,6 +33,9 @@ type Downloader struct {
 	TotalFiles       int
 	OnChanges        chan SiteEvent
 	InProgress       bool
+	tasksDone        chan *FileTask
+	trackersDone     int
+	filesDone        int
 	sync.Mutex
 }
 
@@ -50,11 +53,67 @@ type Announce struct {
 
 func NewDownloader(address string) *Downloader {
 	d := Downloader{
-		Peers:     NewPeerManager(address),
-		Address:   address,
-		OnChanges: make(chan SiteEvent, 400),
+		Peers:        NewPeerManager(address),
+		Address:      address,
+		OnChanges:    make(chan SiteEvent, 400),
+		tasksDone:    make(chan *FileTask, 100),
+		trackersDone: 0,
+		filesDone:    1,
 	}
 	return &d
+}
+
+func (d *Downloader) handleFile(file *FileTask) {
+	if file == nil {
+		return
+	}
+	d.filesDone++
+	d.OnChanges <- SiteEvent{"file_done", file.Filename}
+	log.WithFields(log.Fields{
+		"file": file.Filename,
+	}).Infof("Task completed [%d/%d] in q: %d", d.filesDone, len(d.Queue)+len(d.Done), len(d.Queue))
+
+	if len(d.Queue) > 0 {
+		go func() {
+			d.Lock()
+			d.tasksDone <- d.schedileFile(d.Address)
+			d.Unlock()
+		}()
+	} else if len(d.Done) == d.TotalFiles {
+		fmt.Println("Site downloaded.")
+		d.InProgress = false
+		return
+	}
+}
+
+func (d *Downloader) handlePeer(peer *Peer) {
+
+	go func() {
+		if !d.ContentRequested {
+			d.Lock()
+			d.tasksDone <- d.processContent()
+			d.Unlock()
+		} else {
+			d.Lock()
+			if len(d.Queue) > 0 {
+				d.tasksDone <- d.schedileFile(d.Address)
+			} else {
+				// fmt.Println("All files scheduled")
+			}
+			d.Unlock()
+		}
+	}()
+}
+
+func (d *Downloader) handleAnnounce(peers int) {
+	//TODO: waiting for connections
+	go func() { d.OnChanges <- SiteEvent{"peers_added", peers} }()
+	d.trackersDone++
+	if d.trackersDone == len(d.Peers.Trackers) && d.Peers.Count == 0 {
+		fmt.Println("No peers founded.")
+		d.InProgress = false
+		return
+	}
 }
 
 func (d *Downloader) Download(done chan int) bool {
@@ -71,63 +130,16 @@ func (d *Downloader) Download(done chan int) bool {
 		Site:     d.Address,
 	}}
 
-	files := make(chan *FileTask, 100)
-	inbox := d.Peers.OnPeers
-	announce := d.Peers.OnAnnounce
 	go d.Peers.Announce()
-	// announced := false
-	tCount := 0
-	fCount := 1
 	d.InProgress = true
 	for d.InProgress {
 		select {
-		case file := <-files:
-			if file == nil {
-				break
-			}
-			fCount++
-			d.OnChanges <- SiteEvent{"file_done", file.Filename}
-			log.WithFields(log.Fields{
-				"file": file.Filename,
-			}).Infof("Task completed [%d/%d] in q: %d", fCount, len(d.Queue)+len(d.Done), len(d.Queue))
-			// log.Fatal("")
-			if len(d.Queue) > 0 {
-				go func() {
-					d.Lock()
-					files <- d.schedileFile(d.Address)
-					d.Unlock()
-				}()
-			} else if len(d.Done) == d.TotalFiles {
-				fmt.Println("Site downloaded.")
-				d.InProgress = false
-				break
-			}
-		case peer := <-inbox:
-			// go func() { d.OnChanges <- 0 }()
-			go func(peer *Peer) {
-				if !d.ContentRequested {
-					d.Lock()
-					files <- d.processContent()
-					d.Unlock()
-				} else {
-					d.Lock()
-					if len(d.Queue) > 0 {
-						files <- d.schedileFile(d.Address)
-					} else {
-						// fmt.Println("All files scheduled")
-					}
-					d.Unlock()
-				}
-			}(peer)
-		case c := <-announce:
-			//TODO: waiting for connections
-			go func() { d.OnChanges <- SiteEvent{"peers_added", c} }()
-			tCount++
-			if tCount == len(d.Peers.Trackers) && d.Peers.Count == 0 {
-				fmt.Println("No peers founded.")
-				d.InProgress = false
-				break
-			}
+		case file := <-d.tasksDone:
+			d.handleFile(file)
+		case peer := <-d.Peers.OnPeers:
+			d.handlePeer(peer)
+		case peers := <-d.Peers.OnAnnounce:
+			d.handleAnnounce(peers)
 		}
 	}
 	fmt.Println("Downloader finished.")

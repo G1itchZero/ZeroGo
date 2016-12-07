@@ -8,8 +8,6 @@ import (
 	r "math/rand"
 	"net"
 	"net/http"
-	"os"
-	"strconv"
 	"strings"
 	"time"
 
@@ -75,7 +73,10 @@ func (pm *PeerManager) Announce() {
 					pm.OnPeers <- peer
 				}(peer)
 			}
-			fmt.Println(fmt.Sprintf("%s: %d peers", tracker, len(peers)))
+			log.WithFields(log.Fields{
+				"tracker": tracker,
+				"peers":   len(peers),
+			}).Debug("New peers added")
 			pm.OnAnnounce <- len(peers)
 		}(tracker)
 	}
@@ -84,13 +85,15 @@ func (pm *PeerManager) Announce() {
 func (pm *PeerManager) connectPeer(peer *Peer) {
 	err := peer.Connect()
 	if err == nil {
-		// fmt.Println(fmt.Sprintf("Connection established: %s:%d", peer.Address, peer.Port))
+		log.WithFields(log.Fields{
+			"peer": peer,
+		}).Debug("Peer connected")
 		peer.Ping()
 	} else {
-		// log.WithFields(log.Fields{
-		// 	"error": err,
-		// 	"peer":  peer,
-		// }).Warn("Connection error")
+		log.WithFields(log.Fields{
+			"error": err,
+			"peer":  peer,
+		}).Warn("Connection error")
 		pm.removeFreePeer(peer)
 	}
 }
@@ -155,7 +158,7 @@ func (pm *PeerManager) announceHTTP(tracker string) Peers {
 	log.WithFields(log.Fields{
 		"tracker": tracker,
 		"params":  params,
-	}).Info("Announce tracker")
+	}).Debug("Announce HTTP tracker")
 	resp, _ := http.Get(url)
 	raw, _ := bencode.Decode(resp.Body)
 	resp.Body.Close()
@@ -179,25 +182,8 @@ const (
 	UDP_REQUEST_ANNOUNCE = 1
 )
 
-func (pm *PeerManager) announceUDP(tracker string) Peers {
-	serverAddr, _ := net.ResolveUDPAddr("udp", strings.Replace(tracker, "udp://", "", 1))
-	connectionID := int64(0x41727101980)
-	rnd := r.New(r.NewSource(time.Now().UnixNano()))
-	port := int32(rnd.Intn(99) + 6800)
-	transactionID := rnd.Int31()
-	sid := "-ZN" + strconv.Itoa(os.Getpid()) + "_" + strconv.FormatInt(rnd.Int63(), 10)
-	peerID := []byte(sid[0:20])
-	infoHash := sha1.Sum([]byte(pm.Address))
-	// fmt.Println(fmt.Sprintf("%x", sha1.Sum([]byte(d.Address))))
-	conn, err := net.ListenPacket("udp4", fmt.Sprintf(":%d", port))
-	if err != nil {
-		return Peers{}
-	}
-	socket := conn.(*net.UDPConn)
-	defer socket.Close()
-
-	socket.SetDeadline(time.Now().Add(20 * time.Second))
-
+func (pm *PeerManager) connectUDPTracker(socket *net.UDPConn, serverAddr *net.UDPAddr, transactionID int32) (connectionID int64, err error) {
+	connectionID = int64(0x41727101980)
 	request := new(bytes.Buffer)
 	var data = []interface{}{
 		connectionID,
@@ -209,25 +195,26 @@ func (pm *PeerManager) announceUDP(tracker string) Peers {
 	}
 	socket.WriteToUDP(request.Bytes(), serverAddr)
 	buf := make([]byte, 16)
-	buf2 := make([]byte, 10240)
-	n, addr, err := socket.ReadFromUDP(buf)
-	fmt.Println("Received ", fmt.Sprintf("%x", buf[0:n]), " from ", addr)
+	_, _, err = socket.ReadFromUDP(buf)
 	if err != nil {
-		fmt.Println("Error: ", err)
-		return Peers{}
+		return 0, err
 	}
 	answer := bytes.NewReader(buf)
-	var resp_a int32
-	var resp_t int32
-	var resp_c int64
-	binary.Read(answer, binary.BigEndian, &resp_a)
-	binary.Read(answer, binary.BigEndian, &resp_t)
-	binary.Read(answer, binary.BigEndian, &resp_c)
-	// fmt.Printf("a< %x %x \n", resp_a, resp_c)
-	// fmt.Println(resp_a, resp_t, resp_c)
+	var action int32
+	binary.Read(answer, binary.BigEndian, &action)
+	binary.Read(answer, binary.BigEndian, &transactionID)
+	binary.Read(answer, binary.BigEndian, &connectionID)
+	return connectionID, nil
+	// fmt.Println("Received ", fmt.Sprintf("%x", buf[0:n]), " from ", addr)
+}
+
+func (pm *PeerManager) announceUDPTracker(socket *net.UDPConn, serverAddr *net.UDPAddr, transactionID int32, connectionID int64, port int32) (peers Peers, err error) {
+	peerID := []byte(PEER_ID[0:20])
+	infoHash := sha1.Sum([]byte(pm.Address))
+
 	announce := new(bytes.Buffer)
-	data = []interface{}{
-		resp_c,
+	data := []interface{}{
+		connectionID,
 		uint32(UDP_REQUEST_ANNOUNCE),
 		transactionID,
 		infoHash,
@@ -245,16 +232,19 @@ func (pm *PeerManager) announceUDP(tracker string) Peers {
 	for _, v := range data {
 		binary.Write(announce, binary.BigEndian, v)
 	}
-	fmt.Println(fmt.Sprintf("%x", announce.Bytes()))
+	log.WithFields(log.Fields{
+		"tracker": serverAddr.String(),
+		"params":  fmt.Sprintf("%x", announce.Bytes()),
+	}).Debug("Announce UDP tracker")
 	socket.WriteToUDP(announce.Bytes(), serverAddr)
-	n, addr, err = socket.ReadFromUDP(buf2)
+	buf2 := make([]byte, 10240)
+	n, _, err := socket.ReadFromUDP(buf2)
 	buf2 = buf2[0:n]
-	// fmt.Println("Received ", fmt.Sprintf("%x", buf2), " from ", addr, tracker)
 	if err != nil {
 		fmt.Println("Error: ", err)
-		return Peers{}
+		return Peers{}, err
 	}
-	answer = bytes.NewReader(buf2)
+	answer := bytes.NewReader(buf2)
 	var a uint32
 	var t uint32
 	var i uint32
@@ -265,7 +255,7 @@ func (pm *PeerManager) announceUDP(tracker string) Peers {
 	binary.Read(answer, binary.BigEndian, &i)
 	binary.Read(answer, binary.BigEndian, &l)
 	binary.Read(answer, binary.BigEndian, &s)
-	peers := Peers{}
+	peers = Peers{}
 	for answer.Len() > 0 {
 		peer := NewPeer(answer)
 		if peer.Port == 0 {
@@ -273,7 +263,39 @@ func (pm *PeerManager) announceUDP(tracker string) Peers {
 		}
 		peers = append(peers, peer)
 	}
+	return peers, nil
+}
+
+func (pm *PeerManager) announceUDP(tracker string) Peers {
+	serverAddr, _ := net.ResolveUDPAddr("udp", strings.Replace(tracker, "udp://", "", 1))
+	rnd := r.New(r.NewSource(time.Now().UnixNano()))
+	transactionID := rnd.Int31()
+	port := int32(rnd.Intn(99) + 6800)
+
+	conn, err := net.ListenPacket("udp4", fmt.Sprintf(":%d", port))
+	if err != nil {
+		return Peers{}
+	}
+	socket := conn.(*net.UDPConn)
+	defer socket.Close()
+
+	socket.SetDeadline(time.Now().Add(20 * time.Second))
+
+	connectionID, err := pm.connectUDPTracker(socket, serverAddr, transactionID)
+
+	if err != nil {
+		fmt.Println("Error: ", err)
+		return Peers{}
+	}
+
+	peers, err := pm.announceUDPTracker(socket, serverAddr, transactionID, connectionID, port)
+
+	if err != nil {
+		fmt.Println("Error: ", err)
+		return Peers{}
+	}
 	return peers
+
 }
 
 func (pm *PeerManager) announceTracker(tracker string) Peers {

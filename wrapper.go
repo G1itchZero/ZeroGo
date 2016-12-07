@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"html/template"
+	"log"
 
 	"github.com/labstack/echo"
 )
@@ -89,17 +90,22 @@ if (typeof WebSocket === "undefined")
 `
 
 type Wrapper struct {
-	Nonce             string
-	Key               string
-	Title             string
-	Rev               int
-	FileURL           string
-	Address           string
-	FileInnerPath     string
-	ShowLoadingScreen bool
-	Lang              string
-	QueryString       string
-	Homepage          string
+	Nonce                    string
+	Key                      string
+	Title                    string
+	Rev                      int
+	FileURL                  string
+	Address                  string
+	FileInnerPath            string
+	ShowLoadingScreen        bool
+	Lang                     string
+	QueryString              string
+	Homepage                 string
+	MetaTags                 string
+	BodyStyle                string
+	SandboxPermissions       string
+	PostmessageNonceSecurity string
+	ServerURL                string
 }
 
 func NewWrapper(site *Site) *Wrapper {
@@ -134,5 +140,8 @@ func (w *Wrapper) Render(ctx echo.Context) error {
 	ctx.Response().Header().Set(echo.HeaderContentType, echo.MIMETextHTMLCharsetUTF8)
 	ctx.Response().WriteHeader(200)
 	_, err = ctx.Response().Write(buf.Bytes())
+	if err != nil {
+		log.Fatal(err)
+	}
 	return err
 }

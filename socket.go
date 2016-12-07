@@ -2,7 +2,6 @@ package main
 
 import (
 	"encoding/json"
-	"fmt"
 	"strings"
 	"sync"
 	"time"
@@ -22,7 +21,6 @@ type UiSocket struct {
 }
 
 func NewUiSocket(site *Site, wrapperKey string) *UiSocket {
-	fmt.Println("new socket", wrapperKey)
 	socket := UiSocket{
 		WrapperKey:   wrapperKey,
 		Disconnected: make(chan int),
@@ -36,16 +34,18 @@ func (socket *UiSocket) Serve(ws *websocket.Conn) {
 	socket.Connection = ws
 	socket.Notification("done", "Hi from ZeroNet Golang client!")
 
-	// log.WithFields(log.Fields{
-	// 	"site":        socket.Site.Address,
-	// 	"wrapper_key": socket.WrapperKey,
-	// }).Info("New socket connection")
+	log.WithFields(log.Fields{
+		"site":        socket.Site.Address,
+		"wrapper_key": socket.WrapperKey,
+	}).Info("New socket connection")
 	go func() {
 		for {
 			select {
 			case event := <-socket.Site.Downloader.OnChanges:
-				fmt.Println(event)
-				// socket.Site.Wait()
+				log.WithFields(log.Fields{
+					"event":       event,
+					"wrapper_key": socket.WrapperKey,
+				}).Debug("New socket event")
 				info := socket.Site.GetInfo()
 				info.Event = []interface{}{event.Type, event.Payload}
 				socket.Cmd("setSiteInfo", info)

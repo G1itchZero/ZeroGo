@@ -26,6 +26,7 @@ func main() {
 	os.MkdirAll(DATA, 0777)
 	createCerts()
 	PEER_ID = fmt.Sprintf("-ZN0%s-GO%s", strings.Replace(VERSION, ".", "", -1), randomString(10))
+	log.SetLevel(log.DebugLevel)
 	log.WithFields(log.Fields{
 		"id": PEER_ID,
 	}).Info("Your Peer ID")
