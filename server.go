@@ -93,7 +93,7 @@ func (s *Server) serveWrapper(ctx echo.Context) error {
 		return nil
 	}
 	site := s.Sites.Get(url)
-	fmt.Println(fmt.Sprintf("> %s", yellow(url)))
+	fmt.Println(fmt.Sprintf("> %s", yellow(site.Address)))
 	s.Queue[url] = site
 	wrapper := NewWrapper(site)
 	err := wrapper.Render(ctx)

@@ -20,17 +20,18 @@ type FileTask struct {
 	Size       float64 `json:"size"`
 	Downloaded float64
 	Content    []byte
+	Peers      int
 }
 type Tasks []*FileTask
 
 type Downloader struct {
 	Address          string
 	Peers            *PeerManager
-	Queue            Tasks
-	Done             Tasks
+	Tasks            Tasks
 	ContentRequested bool
 	Content          *gabs.Container
 	TotalFiles       int
+	StartedTasks     int
 	OnChanges        chan SiteEvent
 	InProgress       bool
 	tasksDone        chan *FileTask
@@ -60,6 +61,7 @@ func NewDownloader(address string) *Downloader {
 		tasksDone:    make(chan *FileTask, 100),
 		trackersDone: 0,
 		filesDone:    1,
+		StartedTasks: 0,
 	}
 	return &d
 }
@@ -72,13 +74,15 @@ func (d *Downloader) handleFile(file *FileTask) {
 	d.OnChanges <- SiteEvent{"file_done", file.Filename}
 	log.WithFields(log.Fields{
 		"file": file.Filename,
-	}).Infof("Task completed [%d/%d] in q: %d", d.filesDone, d.TotalFiles+1, len(d.Queue))
+	}).Infof("Task completed [%d/%d] in q: %d", d.filesDone, d.TotalFiles, d.PendingTasks())
 
 	go func() {
-		fmt.Println(len(d.Done), d.TotalFiles)
-		if len(d.Queue) > 0 {
-			d.tasksDone <- d.schedileFile(d.Address)
-		} else if len(d.Done) >= d.TotalFiles-1 {
+		pt := d.PendingTasks()
+		done := d.FinishedTasks()
+		fmt.Println(done, d.TotalFiles, pt)
+		if pt > 0 {
+			d.tasksDone <- d.scheduleFile(d.Address)
+		} else if done >= d.TotalFiles {
 			d.InProgress = false
 			d.done <- 0
 			go d.Peers.Stop()
@@ -87,18 +91,9 @@ func (d *Downloader) handleFile(file *FileTask) {
 }
 
 func (d *Downloader) handlePeer(peer *Peer) {
-
-	go func() {
-		if !d.ContentRequested {
-			d.tasksDone <- d.processContent()
-		} else {
-			if len(d.Queue) > 0 {
-				d.tasksDone <- d.schedileFile(d.Address)
-			} else {
-				// fmt.Println("All files scheduled")
-			}
-		}
-	}()
+	if !d.ContentRequested {
+		d.tasksDone <- d.processContent()
+	}
 }
 
 func (d *Downloader) handleAnnounce(peers int) {
@@ -121,7 +116,7 @@ func (d *Downloader) Download(done chan int) bool {
 	os.MkdirAll(dir, 0777)
 
 	d.ContentRequested = false
-	d.Queue = Tasks{&FileTask{
+	d.Tasks = Tasks{&FileTask{
 		Filename: "content.json",
 		Site:     d.Address,
 	}}
@@ -143,7 +138,6 @@ func (d *Downloader) Download(done chan int) bool {
 	}
 	fmt.Println(green("Site downloaded."))
 	d.filesDone = 0
-	d.Done = Tasks{}
 	done <- 0
 	return success
 	// fmt.Printf("Peers: %s", yellow(len(d.Peers)))
@@ -159,51 +153,73 @@ func (d *Downloader) GetContent() (*gabs.Container, error) {
 
 func (d *Downloader) processContent() *FileTask {
 	d.ContentRequested = true
-	task := d.schedileFile(d.Address)
+	task := d.scheduleFile(d.Address)
 	content, _ := gabs.ParseJSON(task.Content)
 	d.Content = content
 	files, _ := content.S("files").ChildrenMap()
 	for filename, child := range files {
 		file := child.Data().(map[string]interface{})
-		d.Queue = append(d.Queue, &FileTask{
+		d.Tasks = append(d.Tasks, &FileTask{
 			Filename: filename,
 			Hash:     file["sha512"].(string),
 			Size:     file["size"].(float64),
 			Site:     d.Address,
 		})
 	}
-	d.TotalFiles = len(files) + 1
+	d.TotalFiles = len(files) + 1 //content.json
 	return task
 
 }
 
-func (d *Downloader) schedileFile(site string) *FileTask {
-	d.Lock()
-	if len(d.Queue) == 0 {
-		d.Unlock()
+func (d *Downloader) scheduleFile(site string) *FileTask {
+	d.StartedTasks++
+	if d.PendingTasks() == 0 {
 		return nil
 	}
-	task := d.Queue[0]
-	d.Queue = d.Queue[1:]
-	d.Unlock()
 	peer := d.Peers.Get()
 	if peer == nil {
 		return nil
 	}
-	filename := path.Join(DATA, site, task.Filename)
-	if _, err := os.Stat(filename); err == nil && task.Filename != "content.json" {
-		log.WithFields(log.Fields{
-			"task": task.Filename,
-		}).Info("File from disk")
-		d.Done = append(d.Done, task)
-		return task
+
+	for _, task := range d.Tasks {
+		if len(task.Content) == 0 {
+			filename := path.Join(DATA, site, task.Filename)
+			task.Peers++
+			if _, err := os.Stat(filename); err == nil && task.Filename != "content.json" {
+				log.WithFields(log.Fields{
+					"task": task.Filename,
+				}).Info("File from disk")
+				task.Peers--
+				return task
+			}
+			log.WithFields(log.Fields{
+				"task": task.Filename,
+				"peer": peer.Address,
+			}).Info("Requesting file")
+			peer.Download(task)
+			task.Peers--
+			return task
+		}
 	}
-	log.WithFields(log.Fields{
-		"task": task.Filename,
-		"peer": peer.Address,
-	}).Info("Requesting file")
-	peer.Download(task)
-	d.Done = append(d.Done, task)
-	d.Peers.Free(peer)
-	return task
+	return nil
+}
+
+func (d *Downloader) PendingTasks() int {
+	n := 0
+	for _, task := range d.Tasks {
+		if len(task.Content) == 0 {
+			n++
+		}
+	}
+	return n
+}
+
+func (d *Downloader) FinishedTasks() int {
+	n := 0
+	for _, task := range d.Tasks {
+		if len(task.Content) != 0 {
+			n++
+		}
+	}
+	return n
 }

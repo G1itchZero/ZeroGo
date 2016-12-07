@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"container/heap"
 	"crypto/sha1"
 	"encoding/binary"
 	"fmt"
@@ -20,8 +21,7 @@ import (
 type Peers []*Peer
 type PeerManager struct {
 	Address    string
-	FreePeers  Peers
-	BusyPeers  Peers
+	Peers      Peers
 	Count      int
 	Trackers   []string
 	OnPeers    chan *Peer
@@ -32,50 +32,39 @@ type PeerManager struct {
 func NewPeerManager(address string) *PeerManager {
 	pm := PeerManager{
 		Address:    address,
-		FreePeers:  Peers{},
-		BusyPeers:  Peers{},
+		Peers:      Peers{},
 		OnPeers:    make(chan *Peer),
 		OnAnnounce: make(chan int),
 	}
+	heap.Init(&pm.Peers)
 	return &pm
+}
+
+func (pm *PeerManager) GetActivePeers() Peers {
+	peers := Peers{}
+	for _, peer := range pm.Peers {
+		peers = append(peers, peer)
+	}
+	return peers
 }
 
 func (pm *PeerManager) Stop() {
 	log.Println("peers stopping")
-	for _, peer := range pm.FreePeers {
-		peer.Stop()
+	log.Fatal("peers stopped")
+	for _, peer := range pm.Peers {
+		go peer.Stop()
 	}
-	for _, peer := range pm.BusyPeers {
-		peer.Stop()
-	}
-	// log.Fatal("peers stopped")
+	pm.Peers = Peers{}
+	log.Fatal("peers stopped")
 }
 
 func (pm *PeerManager) Get() *Peer {
-	if len(pm.FreePeers) == 0 && len(pm.BusyPeers) == 0 {
+	if len(pm.Peers) == 0 {
 		return nil
 	}
-	pm.Lock()
-	wait := 0
-	for len(pm.FreePeers) == 0 && wait < 100 {
-		time.Sleep(time.Microsecond * 5)
-		wait++
-	}
-	var peer *Peer
-	if wait < 100 {
-		peer = pm.FreePeers[r.Intn(len(pm.FreePeers))]
-		pm.BusyPeers = append(pm.BusyPeers, peer)
-		pm.removeFreePeer(peer)
-	} else {
-		peer = pm.BusyPeers[r.Intn(len(pm.BusyPeers))]
-	}
-	pm.Unlock()
+	peer := heap.Pop(&pm.Peers).(*Peer)
+	fmt.Println(peer)
 	return peer
-}
-
-func (pm *PeerManager) Free(peer *Peer) {
-	pm.removeFreePeer(peer)
-	pm.BusyPeers = append(pm.BusyPeers, peer)
 }
 
 func (pm *PeerManager) Announce() {
@@ -88,12 +77,11 @@ func (pm *PeerManager) Announce() {
 					continue
 				}
 				go func(peer *Peer) {
-					pm.connectPeer(peer)
-					if peer.State != Connected {
-						peer.Stop()
+					err := pm.connectPeer(peer)
+					if err != nil {
 						return
 					}
-					pm.FreePeers = append(pm.FreePeers, peer)
+					heap.Push(&pm.Peers, peer)
 					pm.Count++
 					pm.OnPeers <- peer
 				}(peer)
@@ -107,7 +95,7 @@ func (pm *PeerManager) Announce() {
 	}
 }
 
-func (pm *PeerManager) connectPeer(peer *Peer) {
+func (pm *PeerManager) connectPeer(peer *Peer) error {
 	err := peer.Connect()
 	if err == nil {
 		log.WithFields(log.Fields{
@@ -115,12 +103,13 @@ func (pm *PeerManager) connectPeer(peer *Peer) {
 		}).Debug("Peer connected")
 		peer.Ping()
 	} else {
-		log.WithFields(log.Fields{
-			"error": err,
-			"peer":  peer,
-		}).Warn("Connection error")
-		pm.removeFreePeer(peer)
+		// log.WithFields(log.Fields{
+		// 	"error": err,
+		// 	"peer":  peer,
+		// }).Warn("Connection error")
+		pm.removePeer(peer)
 	}
+	return err
 }
 
 func NewAnnounce(address string, tracker string) Announce {
@@ -134,10 +123,10 @@ func NewAnnounce(address string, tracker string) Announce {
 	}
 }
 
-func (pm *PeerManager) removeFreePeer(peer *Peer) {
+func (pm *PeerManager) removePeer(peer *Peer) {
 	i := func() int {
 		i := 0
-		for _, b := range pm.FreePeers {
+		for _, b := range pm.Peers {
 			if b.Address == peer.Address {
 				return i
 			}
@@ -148,28 +137,11 @@ func (pm *PeerManager) removeFreePeer(peer *Peer) {
 	if i == -1 {
 		return
 	}
-	pm.FreePeers = append(pm.FreePeers[:i], pm.FreePeers[i+1:]...)
-}
-
-func (pm *PeerManager) removeBusyPeer(peer *Peer) {
-	i := func() int {
-		i := 0
-		for _, b := range pm.BusyPeers {
-			if b.Address == peer.Address {
-				return i
-			}
-			i++
-		}
-		return -1
-	}()
-	if i == -1 {
-		return
-	}
-	pm.BusyPeers = append(pm.BusyPeers[:i], pm.BusyPeers[i+1:]...)
+	pm.Peers = append(pm.Peers[:i], pm.Peers[i+1:]...)
 }
 
 func (pm *PeerManager) peerIsKnown(peer *Peer) bool {
-	for _, b := range pm.FreePeers {
+	for _, b := range pm.Peers {
 		if b.Address == peer.Address {
 			return true
 		}
@@ -194,7 +166,7 @@ func (pm *PeerManager) announceHTTP(tracker string) Peers {
 	peers := Peers{}
 	for i := 0; i < peerCount; i++ {
 		peer := NewPeer(peerReader)
-		if peer.Port == 0 {
+		if peer == nil {
 			continue
 		}
 		peers = append(peers, peer)
@@ -283,7 +255,7 @@ func (pm *PeerManager) announceUDPTracker(socket *net.UDPConn, serverAddr *net.U
 	peers = Peers{}
 	for answer.Len() > 0 {
 		peer := NewPeer(answer)
-		if peer.Port == 0 {
+		if peer == nil {
 			continue
 		}
 		peers = append(peers, peer)
@@ -331,4 +303,27 @@ func (pm *PeerManager) announceTracker(tracker string) Peers {
 		return pm.announceUDP(tracker)
 	}
 	return Peers{}
+}
+
+func (pq Peers) Len() int { return len(pq) }
+
+func (pq Peers) Less(i, j int) bool {
+	return pq[i].ActiveTasks < pq[j].ActiveTasks
+}
+
+func (pq Peers) Swap(i, j int) {
+	pq[i], pq[j] = pq[j], pq[i]
+}
+
+func (pq *Peers) Push(x interface{}) {
+	item := x.(*Peer)
+	*pq = append(*pq, item)
+}
+
+func (pq *Peers) Pop() interface{} {
+	old := *pq
+	n := len(old)
+	item := old[n-1]
+	*pq = old[0 : n-1]
+	return item
 }

@@ -61,18 +61,23 @@ type Response struct {
 }
 
 type Peer struct {
-	State      State
-	Address    string
-	Port       uint64
-	Connection *tls.Conn
-	ReqID      int
-	Tasks      Tasks
-	Cancel     chan struct{}
-	buffers    map[int][]byte
-	chans      map[int]chan Response
-	Ticker     *time.Ticker
-	Listening  bool
+	State       State
+	Address     string
+	Port        uint64
+	Connection  *tls.Conn
+	ReqID       int
+	Tasks       Tasks
+	ActiveTasks int
+	Cancel      chan struct{}
+	buffers     map[int][]byte
+	chans       map[int]chan Response
+	Ticker      *time.Ticker
+	Listening   bool
 	sync.Mutex
+}
+
+func (peer *Peer) String() string {
+	return fmt.Sprintf("%s:%d (%d)", peer.Address, peer.Port, peer.ActiveTasks)
 }
 
 func (peer *Peer) send(request Request) Response {
@@ -98,10 +103,13 @@ func (peer *Peer) Stop() {
 }
 
 func (peer *Peer) handleAnswers() {
-	for peer.Listening {
+	for {
+		if !peer.Listening {
+			return
+		}
 		dl := time.Now().Add(20 * time.Second)
 		peer.Connection.SetReadDeadline(dl)
-		fmt.Printf("Set deadline: %s %v\n", dl, peer.Listening)
+		// fmt.Printf("%s:%d - Set deadline: %s %v\n", peer.Address, peer.Port, dl, peer.Listening)
 		message := make([]byte, 1024*16)
 		peer.Lock()
 		_, _ = peer.Connection.Read(message)
@@ -134,6 +142,7 @@ func (peer *Peer) handleAnswers() {
 }
 
 func (peer *Peer) Download(task *FileTask) []byte {
+	peer.ActiveTasks++
 	peer.Tasks = append(peer.Tasks, task)
 	site := task.Site
 	innerPath := task.Filename
@@ -151,6 +160,7 @@ func (peer *Peer) Download(task *FileTask) []byte {
 	message := peer.send(request)
 	ioutil.WriteFile(filename, message.Buffer, 0644)
 	task.Content = message.Buffer
+	peer.ActiveTasks--
 	return task.Content
 }
 
@@ -210,15 +220,15 @@ func (peer *Peer) Connect() error {
 		}()
 		peer.Handshake()
 		peer.Ticker = time.NewTicker(time.Second * 5)
-		go func() {
-			for _ = range peer.Ticker.C {
-				if peer.Listening {
-					peer.Ping()
-				} else {
-					return
-				}
-			}
-		}()
+		// go func() {
+		// 	for _ = range peer.Ticker.C {
+		// 		if peer.Listening {
+		// 			peer.Ping()
+		// 		} else {
+		// 			return
+		// 		}
+		// 	}
+		// }()
 	}
 	return err
 }
@@ -228,11 +238,18 @@ func NewPeer(info io.Reader) *Peer {
 	port := [2]byte{}
 	binary.Read(info, binary.BigEndian, &addr)
 	binary.Read(info, binary.BigEndian, &port)
-	peer := Peer{State: Disconnected, Cancel: make(chan struct{})}
-	peer.Listening = true
-	peer.Address = fmt.Sprintf("%d.%d.%d.%d", addr[0], addr[1], addr[2], addr[3])
-	peer.Port = binary.BigEndian.Uint64([]byte{0, 0, 0, 0, 0, 0, port[0], port[1]})
-	peer.buffers = map[int][]byte{}
-	peer.chans = map[int]chan Response{}
+	if port[0] == 0 && port[1] == 0 {
+		return nil
+	}
+	peer := Peer{
+		State:       Disconnected,
+		Cancel:      make(chan struct{}),
+		Listening:   true,
+		Address:     fmt.Sprintf("%d.%d.%d.%d", addr[0], addr[1], addr[2], addr[3]),
+		Port:        binary.BigEndian.Uint64([]byte{0, 0, 0, 0, 0, 0, port[0], port[1]}),
+		buffers:     map[int][]byte{},
+		chans:       map[int]chan Response{},
+		ActiveTasks: 0,
+	}
 	return &peer
 }

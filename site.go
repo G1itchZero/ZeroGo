@@ -54,9 +54,8 @@ func NewSite(address string, sm *SiteManager) *Site {
 }
 
 func (site *Site) Download(ch chan *Site) {
-	site.Lock()
 	site.Done = ch
-	if site.Downloader.TotalFiles != 0 && len(site.Downloader.Done) == site.Downloader.TotalFiles {
+	if site.Downloader.TotalFiles != 0 && site.Downloader.FinishedTasks() == site.Downloader.TotalFiles {
 		site.Ready = true
 		site.Unlock()
 		site.Done <- site
@@ -64,12 +63,13 @@ func (site *Site) Download(ch chan *Site) {
 	}
 	done := make(chan int)
 	go func() {
+		site.Lock()
 		site.Success = site.Downloader.Download(done)
+		site.Unlock()
 	}()
 	<-done
 	site.Content = site.Downloader.Content
 	site.Ready = true
-	site.Unlock()
 	site.Done <- site
 }
 
@@ -131,8 +131,8 @@ func (site *Site) GetInfo() SiteInfo {
 		Files:    site.Downloader.TotalFiles - 1,
 		Peers:    site.Downloader.Peers.Count,
 		Content:  content,
-		Workers:  len(site.Downloader.Peers.BusyPeers),
-		Tasks:    len(site.Downloader.Peers.BusyPeers),
+		Workers:  len(site.Downloader.Peers.GetActivePeers()),
+		Tasks:    len(site.Downloader.Peers.GetActivePeers()),
 		Settings: site.GetSettings(),
 
 		SizeLimit:     100,
@@ -141,7 +141,7 @@ func (site *Site) GetInfo() SiteInfo {
 		// AuthKeySha512:  "",
 		// AuthKey:        "",
 		BadFiles:       0,
-		StartedTaskNum: len(site.Downloader.Peers.BusyPeers),
+		StartedTaskNum: site.Downloader.StartedTasks,
 		ContentUpdated: 0,
 	}
 }
