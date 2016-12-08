@@ -8,7 +8,7 @@ import (
 	"sync"
 
 	"github.com/G1itchZero/zeronet-go/events"
-	"github.com/G1itchZero/zeronet-go/peer"
+	"github.com/G1itchZero/zeronet-go/interfaces"
 	"github.com/G1itchZero/zeronet-go/peer_manager"
 	"github.com/G1itchZero/zeronet-go/tasks"
 	"github.com/G1itchZero/zeronet-go/utils"
@@ -72,7 +72,7 @@ func (d *Downloader) handleFile(file *tasks.FileTask) {
 	}()
 }
 
-func (d *Downloader) handlePeer(p *peer.Peer) {
+func (d *Downloader) handlePeer(p interfaces.IPeer) {
 	if !d.ContentRequested {
 		d.tasksDone <- d.processContent()
 	}
@@ -166,20 +166,17 @@ func (d *Downloader) scheduleFile(site string) *tasks.FileTask {
 	for _, task := range d.Tasks {
 		if len(task.Content) == 0 {
 			filename := path.Join(utils.GetDataPath(), site, task.Filename)
-			task.Peers++
 			if _, err := os.Stat(filename); err == nil && task.Filename != "content.json" {
 				log.WithFields(log.Fields{
 					"task": task.Filename,
 				}).Info("File from disk")
-				task.Peers--
 				return task
 			}
 			log.WithFields(log.Fields{
 				"task": task.Filename,
 				"peer": peer.Address,
 			}).Info("Requesting file")
-			peer.Download(task)
-			task.Peers--
+			task.AddPeer(peer)
 			return task
 		}
 	}

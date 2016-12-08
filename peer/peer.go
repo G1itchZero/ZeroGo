@@ -13,7 +13,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/G1itchZero/zeronet-go/tasks"
+	"github.com/G1itchZero/zeronet-go/interfaces"
 	"github.com/G1itchZero/zeronet-go/utils"
 	_ "github.com/Sirupsen/logrus"
 	msgpack "gopkg.in/vmihailenco/msgpack.v2"
@@ -68,7 +68,7 @@ type Peer struct {
 	Port        uint64
 	Connection  *tls.Conn
 	ReqID       int
-	Tasks       tasks.Tasks
+	Tasks       []interfaces.ITask
 	ActiveTasks int
 	Cancel      chan struct{}
 	buffers     map[int][]byte
@@ -76,6 +76,28 @@ type Peer struct {
 	Ticker      *time.Ticker
 	Listening   bool
 	sync.Mutex
+}
+
+func (peer *Peer) AddTask(task interfaces.ITask) {
+	peer.Tasks = append(peer.Tasks, task)
+	peer.Download(task)
+}
+
+func (peer *Peer) RemoveTask(task interfaces.ITask) {
+	i := func() int {
+		i := 0
+		for _, b := range peer.Tasks {
+			if b.GetSite() == task.GetSite() {
+				return i
+			}
+			i++
+		}
+		return -1
+	}()
+	if i == -1 {
+		return
+	}
+	peer.Tasks = append(peer.Tasks[:i], peer.Tasks[i+1:]...)
 }
 
 func (peer *Peer) String() string {
@@ -143,11 +165,11 @@ func (peer *Peer) handleAnswers() {
 	}
 }
 
-func (peer *Peer) Download(task *tasks.FileTask) []byte {
+func (peer *Peer) Download(task interfaces.ITask) []byte {
 	peer.ActiveTasks++
 	peer.Tasks = append(peer.Tasks, task)
-	site := task.Site
-	innerPath := task.Filename
+	site := task.GetSite()
+	innerPath := task.GetFilename()
 	filename := path.Join(utils.GetDataPath(), site, innerPath)
 	os.MkdirAll(path.Dir(filename), 0777)
 	location := 0
@@ -161,9 +183,10 @@ func (peer *Peer) Download(task *tasks.FileTask) []byte {
 	}
 	message := peer.send(request)
 	ioutil.WriteFile(filename, message.Buffer, 0644)
-	task.Content = message.Buffer
+	task.SetContent(message.Buffer)
+	peer.RemoveTask(task)
 	peer.ActiveTasks--
-	return task.Content
+	return task.GetContent()
 }
 
 func (peer *Peer) Ping() {
