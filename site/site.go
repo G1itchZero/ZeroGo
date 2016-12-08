@@ -1,4 +1,4 @@
-package main
+package site
 
 import (
 	"io/ioutil"
@@ -7,36 +7,32 @@ import (
 	"path"
 	"sync"
 
+	"github.com/G1itchZero/zeronet-go/downloader"
+	"github.com/G1itchZero/zeronet-go/events"
+	"github.com/G1itchZero/zeronet-go/utils"
 	"github.com/Jeffail/gabs"
 )
-
-type SiteEvent struct {
-	Type    string
-	Payload interface{}
-}
 
 type Site struct {
 	Address    string
 	Path       string
 	Content    *gabs.Container
 	Done       chan *Site
-	Downloader *Downloader
-	Manager    *SiteManager
+	Downloader *downloader.Downloader
 	Added      int
 	Ready      bool
 	Success    bool
-	OnChanges  chan SiteEvent
+	OnChanges  chan events.SiteEvent
 	sync.Mutex
 }
 
-func NewSite(address string, sm *SiteManager) *Site {
+func NewSite(address string) *Site {
 	done := make(chan *Site, 2)
 	site := Site{
 		Address:    address,
-		Path:       path.Join(DATA, address),
+		Path:       path.Join(utils.GetDataPath(), address),
 		Done:       done,
-		Downloader: NewDownloader(address),
-		Manager:    sm,
+		Downloader: downloader.NewDownloader(address),
 		Ready:      false,
 		Success:    false,
 	}

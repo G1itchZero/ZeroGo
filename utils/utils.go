@@ -1,4 +1,4 @@
-package main
+package utils
 
 import (
 	"bytes"
@@ -15,12 +15,39 @@ import (
 	r "math/rand"
 	"os"
 	"path"
+	"strings"
 	"time"
 
 	"github.com/Jeffail/gabs"
 )
 
-func randomString(n int) string {
+var PEER_ID string
+var DATA string
+
+// ZeroNet version mimicry
+const VERSION string = "0.5.1"
+const REV int = 1756
+
+const ZN_PATH string = "ZeroNet"
+const ZN_DATA string = "data"
+const ZN_DATA_ALT string = "data_alt"
+const ZN_HOMEPAGE string = "1HeLLo4uzjaLetFx6NH3PMwFP3qbRbTf3D"
+
+func GetDataPath() string {
+	if DATA == "" {
+		DATA = path.Join(".", "data")
+	}
+	return DATA
+}
+
+func GetPeerID() string {
+	if PEER_ID == "" {
+		PEER_ID = fmt.Sprintf("-ZN0%s-GO%s", strings.Replace(VERSION, ".", "", -1), RandomString(10))
+	}
+	return PEER_ID
+}
+
+func RandomString(n int) string {
 	var letters = []rune("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ")
 	b := make([]rune, n)
 	for i := range b {
@@ -29,7 +56,7 @@ func randomString(n int) string {
 	return string(b)
 }
 
-func createCerts() {
+func CreateCerts() {
 	template := &x509.Certificate{
 		IsCA: true,
 		BasicConstraintsValid: true,
@@ -81,15 +108,15 @@ func createCerts() {
 
 func loadUsers() (*gabs.Container, error) {
 	filename := path.Join(".", ZN_PATH, ZN_DATA, "users.json")
-	return loadJSON(filename)
+	return LoadJSON(filename)
 }
 
 func loadContent(site string) (*gabs.Container, error) {
 	filename := path.Join(".", ZN_PATH, ZN_DATA_ALT, site, "content.json")
-	return loadJSON(filename)
+	return LoadJSON(filename)
 }
 
-func loadJSON(filename string) (*gabs.Container, error) {
+func LoadJSON(filename string) (*gabs.Container, error) {
 	content, err := ioutil.ReadFile(filename)
 	if err == nil {
 		return gabs.ParseJSON(content)
@@ -107,7 +134,7 @@ func GetBytes(key interface{}) ([]byte, error) {
 	return buf.Bytes(), nil
 }
 
-func getTrackers() []string {
+func GetTrackers() []string {
 	trackers := []string{
 		// "zero://boot3rdez4rzn36x.onion:15441",
 		// "zero://boot.zeronet.io#f36ca555bee6ba216b14d10f38c16f7769ff064e0e37d887603548cc2e64191d:15441",

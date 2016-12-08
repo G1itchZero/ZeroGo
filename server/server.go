@@ -1,4 +1,4 @@
-package main
+package server
 
 import (
 	"errors"
@@ -9,6 +9,11 @@ import (
 	"path"
 	"time"
 
+	"github.com/G1itchZero/zeronet-go/site"
+	"github.com/G1itchZero/zeronet-go/socket"
+	"github.com/G1itchZero/zeronet-go/utils"
+
+	"github.com/G1itchZero/zeronet-go/site_manager"
 	"github.com/fatih/color"
 	"github.com/gorilla/websocket"
 	"github.com/labstack/echo"
@@ -16,17 +21,17 @@ import (
 
 type Server struct {
 	Port    int
-	Sockets map[string]*UiSocket
-	Sites   *SiteManager
-	Queue   map[string]*Site
+	Sockets map[string]*socket.UiSocket
+	Sites   *site_manager.SiteManager
+	Queue   map[string]*site.Site
 }
 
-func NewServer(port int, sites *SiteManager) *Server {
+func NewServer(port int, sites *site_manager.SiteManager) *Server {
 	server := Server{
 		Port:    port,
-		Sockets: map[string]*UiSocket{},
+		Sockets: map[string]*socket.UiSocket{},
 		Sites:   sites,
-		Queue:   map[string]*Site{},
+		Queue:   map[string]*site.Site{},
 	}
 	return &server
 }
@@ -87,24 +92,24 @@ func (s *Server) serveWrapper(ctx echo.Context) error {
 	yellow := color.New(color.FgYellow).SprintFunc()
 	url := ctx.Param("url")
 	if url == "" {
-		url = ZN_HOMEPAGE
+		url = utils.ZN_HOMEPAGE
 	}
 	if url == "favicon.ico" {
 		return nil
 	}
-	site := s.Sites.Get(url)
-	fmt.Println(fmt.Sprintf("> %s", yellow(site.Address)))
-	s.Queue[url] = site
-	wrapper := NewWrapper(site)
+	st := s.Sites.Get(url)
+	fmt.Println(fmt.Sprintf("> %s", yellow(st.Address)))
+	s.Queue[url] = st
+	wrapper := NewWrapper(st)
 	err := wrapper.Render(ctx)
-	socket := NewUiSocket(site, wrapper.Key)
+	socket := socket.NewUiSocket(st, s.Sites, wrapper.Key)
 	s.Sockets[wrapper.Key] = socket
 	return err
 }
 
 func (s *Server) serveInner(ctx echo.Context) error {
 	name := ctx.Param("site")
-	root := path.Join(DATA, name)
+	root := path.Join(utils.GetDataPath(), name)
 	filename := path.Join(root, "index.html")
 	site := s.Queue[name]
 	site.Wait()
@@ -114,7 +119,7 @@ func (s *Server) serveInner(ctx echo.Context) error {
 func (s *Server) serveInnerStatic(ctx echo.Context) error {
 	site, _ := ctx.Cookie("site")
 	url := ctx.Param("*")
-	root := path.Join(DATA, site.Value)
+	root := path.Join(utils.GetDataPath(), site.Value)
 	filename := path.Join(root, url)
 	return ctx.File(filename)
 }

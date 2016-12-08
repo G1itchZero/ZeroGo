@@ -1,4 +1,4 @@
-package main
+package peer
 
 import (
 	"crypto/tls"
@@ -13,6 +13,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/G1itchZero/zeronet-go/tasks"
+	"github.com/G1itchZero/zeronet-go/utils"
 	_ "github.com/Sirupsen/logrus"
 	msgpack "gopkg.in/vmihailenco/msgpack.v2"
 )
@@ -66,7 +68,7 @@ type Peer struct {
 	Port        uint64
 	Connection  *tls.Conn
 	ReqID       int
-	Tasks       Tasks
+	Tasks       tasks.Tasks
 	ActiveTasks int
 	Cancel      chan struct{}
 	buffers     map[int][]byte
@@ -141,12 +143,12 @@ func (peer *Peer) handleAnswers() {
 	}
 }
 
-func (peer *Peer) Download(task *FileTask) []byte {
+func (peer *Peer) Download(task *tasks.FileTask) []byte {
 	peer.ActiveTasks++
 	peer.Tasks = append(peer.Tasks, task)
 	site := task.Site
 	innerPath := task.Filename
-	filename := path.Join(DATA, site, innerPath)
+	filename := path.Join(utils.GetDataPath(), site, innerPath)
 	os.MkdirAll(path.Dir(filename), 0777)
 	location := 0
 	request := Request{
@@ -179,10 +181,10 @@ func (peer *Peer) Handshake() Response {
 	hs := Request{
 		Cmd: "handshake",
 		Params: Handshake{
-			Version:        VERSION,
-			Rev:            REV,
+			Version:        utils.VERSION,
+			Rev:            utils.REV,
 			Protocol:       "v2",
-			PeerID:         PEER_ID,
+			PeerID:         utils.GetPeerID(),
 			FileserverPort: 0,
 			PortOpened:     false,
 			TargetIP:       peer.Address,
@@ -195,9 +197,9 @@ func (peer *Peer) Handshake() Response {
 
 func (peer *Peer) Connect() error {
 	peer.State = Connecting
-	certFilename := path.Join(DATA, "cert-rsa.pem")
-	keyFilename := path.Join(DATA, "key-rsa.pem")
-	cert, err := tls.LoadX509KeyPair(certFilename, keyFilename)
+	certFilename := path.Join(utils.GetDataPath(), "cert-rsa.pem")
+	keyFilename := path.Join(utils.GetDataPath(), "key-rsa.pem")
+	cert, _ := tls.LoadX509KeyPair(certFilename, keyFilename)
 	conn, err := tls.DialWithDialer(&net.Dialer{
 		Deadline: time.Now().Add(10 * time.Second),
 		Timeout:  time.Second * 5,

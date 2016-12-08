@@ -1,10 +1,12 @@
-package main
+package server
 
 import (
 	"bytes"
 	"html/template"
 	"log"
 
+	"github.com/G1itchZero/zeronet-go/site"
+	"github.com/G1itchZero/zeronet-go/utils"
 	"github.com/labstack/echo"
 )
 
@@ -108,38 +110,38 @@ type Wrapper struct {
 	ServerURL                string
 }
 
-func NewWrapper(site *Site) *Wrapper {
-	nonce := randomString(36)
-	wrapperKey := randomString(36)
-	title := site.Address
-	if site.Content != nil {
-		title = site.Content.S("title").Data().(string)
+func NewWrapper(s *site.Site) *Wrapper {
+	nonce := utils.RandomString(36)
+	wrapperKey := utils.RandomString(36)
+	title := s.Address
+	if s.Content != nil {
+		title = s.Content.S("title").Data().(string)
 	}
 	w := Wrapper{
-		Rev:               REV,
+		Rev:               utils.REV,
 		Title:             title,
-		FileURL:           "/inner/" + site.Address,
-		Address:           site.Address,
+		FileURL:           "/inner/" + s.Address,
+		Address:           s.Address,
 		FileInnerPath:     "index.html",
 		ShowLoadingScreen: true,
 		Lang:              "en",
 		QueryString:       "?wrapper_nonce=" + nonce,
 		Nonce:             nonce,
 		Key:               wrapperKey,
-		Homepage:          "/" + ZN_HOMEPAGE,
+		Homepage:          "/" + utils.ZN_HOMEPAGE,
 	}
 	return &w
 }
 
 func (w *Wrapper) Render(ctx echo.Context) error {
-	tmpl, err := template.New("wrapper").Parse(TEMPLATE)
+	tmpl, _ := template.New("wrapper").Parse(TEMPLATE)
 	buf := new(bytes.Buffer)
-	if err = tmpl.Execute(buf, w); err != nil {
+	if err := tmpl.Execute(buf, w); err != nil {
 		return err
 	}
 	ctx.Response().Header().Set(echo.HeaderContentType, echo.MIMETextHTMLCharsetUTF8)
 	ctx.Response().WriteHeader(200)
-	_, err = ctx.Response().Write(buf.Bytes())
+	_, err := ctx.Response().Write(buf.Bytes())
 	if err != nil {
 		log.Fatal(err)
 	}

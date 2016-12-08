@@ -1,4 +1,4 @@
-package main
+package peer_manager
 
 import (
 	"bytes"
@@ -13,27 +13,42 @@ import (
 	"sync"
 	"time"
 
+	"github.com/G1itchZero/zeronet-go/peer"
+	"github.com/G1itchZero/zeronet-go/utils"
 	log "github.com/Sirupsen/logrus"
 	"github.com/google/go-querystring/query"
 	bencode "github.com/jackpal/bencode-go"
 )
 
-type Peers []*Peer
+type Peers []*peer.Peer
+
 type PeerManager struct {
 	Address    string
 	Peers      Peers
 	Count      int
 	Trackers   []string
-	OnPeers    chan *Peer
+	OnPeers    chan *peer.Peer
 	OnAnnounce chan int
 	sync.Mutex
+}
+
+type Announce struct {
+	InfoHash   string `url:"info_hash"`
+	PeerID     string `url:"peer_id"`
+	Port       int    `url:"port"`
+	Uploaded   int    `url:"uploaded"`
+	Downloaded int    `url:"downloaded"`
+	Left       int    `url:"left"`
+	Compact    int    `url:"compact"`
+	NumWant    int    `url:"numwant"`
+	Event      string `url:"event"`
 }
 
 func NewPeerManager(address string) *PeerManager {
 	pm := PeerManager{
 		Address:    address,
 		Peers:      Peers{},
-		OnPeers:    make(chan *Peer),
+		OnPeers:    make(chan *peer.Peer),
 		OnAnnounce: make(chan int),
 	}
 	heap.Init(&pm.Peers)
@@ -58,33 +73,33 @@ func (pm *PeerManager) Stop() {
 	log.Fatal("peers stopped")
 }
 
-func (pm *PeerManager) Get() *Peer {
+func (pm *PeerManager) Get() *peer.Peer {
 	if len(pm.Peers) == 0 {
 		return nil
 	}
-	peer := heap.Pop(&pm.Peers).(*Peer)
+	peer := heap.Pop(&pm.Peers).(*peer.Peer)
 	fmt.Println(peer)
 	return peer
 }
 
 func (pm *PeerManager) Announce() {
-	pm.Trackers = getTrackers()
+	pm.Trackers = utils.GetTrackers()
 	for _, tracker := range pm.Trackers {
 		go func(tracker string) {
 			peers := pm.announceTracker(tracker)
-			for _, peer := range peers {
-				if pm.peerIsKnown(peer) {
+			for _, p := range peers {
+				if pm.peerIsKnown(p) {
 					continue
 				}
-				go func(peer *Peer) {
-					err := pm.connectPeer(peer)
+				go func(p *peer.Peer) {
+					err := pm.connectPeer(p)
 					if err != nil {
 						return
 					}
-					heap.Push(&pm.Peers, peer)
+					heap.Push(&pm.Peers, p)
 					pm.Count++
-					pm.OnPeers <- peer
-				}(peer)
+					pm.OnPeers <- p
+				}(p)
 			}
 			log.WithFields(log.Fields{
 				"tracker": tracker,
@@ -95,7 +110,7 @@ func (pm *PeerManager) Announce() {
 	}
 }
 
-func (pm *PeerManager) connectPeer(peer *Peer) error {
+func (pm *PeerManager) connectPeer(peer *peer.Peer) error {
 	err := peer.Connect()
 	if err == nil {
 		log.WithFields(log.Fields{
@@ -115,7 +130,7 @@ func (pm *PeerManager) connectPeer(peer *Peer) error {
 func NewAnnounce(address string, tracker string) Announce {
 	return Announce{
 		InfoHash: fmt.Sprintf("%s", sha1.Sum([]byte(address))),
-		PeerID:   PEER_ID,
+		PeerID:   utils.GetPeerID(),
 		Port:     0, //15441,
 		Uploaded: 0, Downloaded: 0,
 		Left: 0, Compact: 1, NumWant: 30,
@@ -123,7 +138,7 @@ func NewAnnounce(address string, tracker string) Announce {
 	}
 }
 
-func (pm *PeerManager) removePeer(peer *Peer) {
+func (pm *PeerManager) removePeer(peer *peer.Peer) {
 	i := func() int {
 		i := 0
 		for _, b := range pm.Peers {
@@ -140,7 +155,7 @@ func (pm *PeerManager) removePeer(peer *Peer) {
 	pm.Peers = append(pm.Peers[:i], pm.Peers[i+1:]...)
 }
 
-func (pm *PeerManager) peerIsKnown(peer *Peer) bool {
+func (pm *PeerManager) peerIsKnown(peer *peer.Peer) bool {
 	for _, b := range pm.Peers {
 		if b.Address == peer.Address {
 			return true
@@ -160,12 +175,12 @@ func (pm *PeerManager) announceHTTP(tracker string) Peers {
 	raw, _ := bencode.Decode(resp.Body)
 	resp.Body.Close()
 	data := raw.(map[string]interface{})
-	peerData, _ := GetBytes(data["peers"])
+	peerData, _ := utils.GetBytes(data["peers"])
 	peerReader := bytes.NewReader(peerData)
 	peerCount := len(peerData) / 6
 	peers := Peers{}
 	for i := 0; i < peerCount; i++ {
-		peer := NewPeer(peerReader)
+		peer := peer.NewPeer(peerReader)
 		if peer == nil {
 			continue
 		}
@@ -206,7 +221,7 @@ func (pm *PeerManager) connectUDPTracker(socket *net.UDPConn, serverAddr *net.UD
 }
 
 func (pm *PeerManager) announceUDPTracker(socket *net.UDPConn, serverAddr *net.UDPAddr, transactionID int32, connectionID int64, port int32) (peers Peers, err error) {
-	peerID := []byte(PEER_ID[0:20])
+	peerID := []byte(utils.GetPeerID()[0:20])
 	infoHash := sha1.Sum([]byte(pm.Address))
 
 	announce := new(bytes.Buffer)
@@ -254,7 +269,7 @@ func (pm *PeerManager) announceUDPTracker(socket *net.UDPConn, serverAddr *net.U
 	binary.Read(answer, binary.BigEndian, &s)
 	peers = Peers{}
 	for answer.Len() > 0 {
-		peer := NewPeer(answer)
+		peer := peer.NewPeer(answer)
 		if peer == nil {
 			continue
 		}
@@ -316,7 +331,7 @@ func (pq Peers) Swap(i, j int) {
 }
 
 func (pq *Peers) Push(x interface{}) {
-	item := x.(*Peer)
+	item := x.(*peer.Peer)
 	*pq = append(*pq, item)
 }
 
