@@ -62,8 +62,8 @@ func (site *Site) Download(ch chan *Site) {
 	done := make(chan int)
 	go func() {
 		site.Lock()
-		site.Success = site.Downloader.Download(done, site.Filter)
 		go site.handleEvents()
+		site.Success = site.Downloader.Download(done, site.Filter)
 		site.Unlock()
 	}()
 	<-done

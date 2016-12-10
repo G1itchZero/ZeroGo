@@ -71,7 +71,7 @@ func (d *Downloader) Download(done chan int, filter FilterFunc) bool {
 	for _, task := range d.Tasks {
 		go d.ScheduleFile(task)
 	}
-	for {
+	for d.PendingTasksCount() > 0 {
 		select {
 		case p := <-d.Peers.OnPeers:
 			sort.Sort(d.Tasks)
@@ -94,6 +94,8 @@ func (d *Downloader) Download(done chan int, filter FilterFunc) bool {
 			}
 		}
 	}
+	done <- 0
+	return true
 }
 
 func (d *Downloader) GetContent() (*gabs.Container, error) {
