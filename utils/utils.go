@@ -33,6 +33,7 @@ const ZN_DATA string = "data"
 const ZN_DATA_ALT string = "data_alt"
 const ZN_HOMEPAGE string = "1HeLLo4uzjaLetFx6NH3PMwFP3qbRbTf3D"
 const ZN_UPDATE string = "1UPDatEDxnvHDo7TXvq6AEBARfNkyfxsp"
+const ZN_MEDIA string = "ZeroNet/src/Ui/media"
 
 func GetDataPath() string {
 	if DATA == "" {

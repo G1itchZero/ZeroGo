@@ -14,6 +14,7 @@ import (
 	"github.com/G1itchZero/zeronet-go/utils"
 
 	"github.com/G1itchZero/zeronet-go/site_manager"
+	log "github.com/Sirupsen/logrus"
 	"github.com/fatih/color"
 	"github.com/gorilla/websocket"
 	"github.com/labstack/echo"
@@ -38,10 +39,11 @@ func NewServer(port int, sites *site_manager.SiteManager) *Server {
 
 func NoCacheMiddleware(next echo.HandlerFunc) echo.HandlerFunc {
 	return func(ctx echo.Context) error {
-		ctx.Response().Header().Set("Cache-Control", "no-cache, private, max-age=0, no-store, must-revalidate")
-		ctx.Response().Header().Set("Expires", time.Unix(0, 0).Format(http.TimeFormat))
-		ctx.Response().Header().Set("Pragma", "no-cache")
-		ctx.Response().Header().Set("X-Accel-Expires", "0")
+		header := ctx.Response().Header()
+		header.Set("Cache-Control", "no-cache, private, max-age=0, no-store, must-revalidate")
+		header.Set("Expires", time.Unix(0, 0).Format(http.TimeFormat))
+		header.Set("Pragma", "no-cache")
+		header.Set("X-Accel-Expires", "0")
 		return next(ctx)
 	}
 }
@@ -68,6 +70,10 @@ func (s *Server) socketHandler(c echo.Context) error {
 	ws, err := upgrader.Upgrade(c.Response(), c.Request(), nil)
 	wrapperKey := c.QueryParam("wrapper_key")
 	if err != nil {
+		log.WithFields(log.Fields{
+			"wrapperKey": wrapperKey,
+			"err":        err,
+		}).Error("Socket upgrade error")
 		return err
 	}
 	defer ws.Close()
@@ -83,7 +89,7 @@ func (s *Server) socketHandler(c echo.Context) error {
 func (s *Server) Serve() {
 	e := echo.New()
 	e.Use(NoCacheMiddleware)
-	e.Static("/uimedia", path.Join(utils.GetDataPath(), utils.ZN_UPDATE, "ZeroNet", "src", "Ui", "media"))
+	e.Static("/uimedia", path.Join(utils.GetDataPath(), utils.ZN_UPDATE, utils.ZN_MEDIA))
 
 	inner := e.Group("/inner")
 	inner.Use(InnerMiddleware)
@@ -92,7 +98,6 @@ func (s *Server) Serve() {
 	inner.GET("/*", s.serveInnerStatic)
 
 	e.GET("/Websocket", s.socketHandler)
-	// e.GET("/favicon.ico", s.serveInnerStatic, InnerMiddleware)
 	e.GET("/:url/", s.serveWrapper)
 	e.GET("/:url", s.serveWrapper)
 	e.GET("/", s.serveWrapper)
@@ -114,6 +119,9 @@ func (s *Server) serveWrapper(ctx echo.Context) error {
 	s.Queue[url] = st
 	wrapper := NewWrapper(st)
 	err := wrapper.Render(ctx)
+	if err != nil {
+		log.Error("Wrapper rendering error", err)
+	}
 	socket := socket.NewUiSocket(st, s.Sites, wrapper.Key)
 	s.Sockets[wrapper.Key] = socket
 	return err
@@ -136,11 +144,6 @@ func (s *Server) serveInnerStatic(ctx echo.Context) error {
 	site := s.Queue[name.Value]
 	site.WaitFile(url)
 	return ctx.File(filename)
-}
-
-func serveStatic(ctx echo.Context, p string) error {
-	fmt.Println(p)
-	return ctx.File(p)
 }
 
 type Template struct {

@@ -75,6 +75,7 @@ type Peer struct {
 	Ticker      *time.Ticker
 	Listening   bool
 	Free        chan *Peer
+	wlock       *sync.Mutex
 	sync.Mutex
 }
 
@@ -113,9 +114,11 @@ func (peer *Peer) send(request Request) Response {
 	request.ReqID = peer.ReqID
 	data, _ := msgpack.Marshal(request)
 	peer.Connection.Write(data)
+	peer.wlock.Lock()
 	peer.buffers[request.ReqID] = []byte{}
 	peer.chans[request.ReqID] = make(chan Response)
 	peer.ReqID++
+	peer.wlock.Unlock()
 	// log.WithFields(log.Fields{"request": request}).Info("Sending")
 	return <-peer.chans[request.ReqID]
 }
@@ -279,6 +282,7 @@ func NewPeer(info io.Reader, ch chan *Peer) *Peer {
 		chans:       map[int]chan Response{},
 		ActiveTasks: 0,
 		Free:        ch,
+		wlock:       &sync.Mutex{},
 	}
 	return &peer
 }

@@ -3,12 +3,12 @@ package tasks
 import (
 	"fmt"
 	"io/ioutil"
-	"log"
 	"path"
 
 	"github.com/G1itchZero/zeronet-go/events"
 	"github.com/G1itchZero/zeronet-go/interfaces"
 	"github.com/G1itchZero/zeronet-go/utils"
+	log "github.com/Sirupsen/logrus"
 )
 
 type Tasks []*FileTask
@@ -81,9 +81,10 @@ func (task *FileTask) Finish() {
 	if !task.Done {
 		task.Done = true
 		// task.OnChanges <- events.SiteEvent{Type: "file_done", Payload: task.Filename}
-		fmt.Println("finished", task)
+		log.WithFields(log.Fields{
+			"task": task,
+		}).Debug("Finished")
 		task.Priority = -1
-		// go func() { task.OnChanges <- events.SiteEvent{Type: "file_done", Payload: task.Filename} }()
 	}
 }
 

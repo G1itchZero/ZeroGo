@@ -71,11 +71,11 @@ func (socket *UiSocket) Serve(ws *websocket.Conn) {
 		if err != nil {
 			continue
 		}
-		// log.WithFields(log.Fields{
-		// 	"site":        socket.Site.Address,
-		// 	"wrapper_key": socket.WrapperKey,
-		// 	"massage":     message,
-		// }).Info("Message")
+		log.WithFields(log.Fields{
+			"site":        socket.Site.Address,
+			"wrapper_key": socket.WrapperKey,
+			"massage":     message,
+		}).Info("Message")
 
 		switch message.Cmd {
 		case "fileQuery":
@@ -135,7 +135,7 @@ func (socket *UiSocket) feedQuery(message Message) {
 			FeedName:  "Golang ZeroNet",
 			Type:      "comment",
 			DateAdded: int(time.Now().Unix()),
-			URL:       "",
+			URL:       "/",
 			Site:      socket.Site.Address,
 		},
 	})

@@ -20,6 +20,8 @@ import (
 	log "github.com/Sirupsen/logrus"
 )
 
+type FilterFunc func(string) bool
+
 type Downloader struct {
 	Address          string
 	Peers            *peer_manager.PeerManager
@@ -52,31 +54,7 @@ func NewDownloader(address string) *Downloader {
 	return &d
 }
 
-// func (d *Downloader) handleFile(file *tasks.FileTask) {
-// 	if file == nil {
-// 		return
-// 	}
-// 	d.filesDone++
-// 	d.OnChanges <- events.SiteEvent{"file_done", file.Filename}
-// 	log.WithFields(log.Fields{
-// 		"file": file.Filename,
-// 	}).Infof("Task completed [%d/%d] in q: %d", d.filesDone, d.TotalFiles, d.PendingTasks())
-//
-// 	go func() {
-// 		pt := d.PendingTasks()
-// 		done := d.FinishedTasks()
-// 		fmt.Println(done, d.TotalFiles, pt)
-// 		if pt > 0 {
-// 			d.tasksDone <- d.ScheduleFile()
-// 		} else if done >= d.TotalFiles {
-// 			d.InProgress = false
-// 			d.done <- 0
-// 			go d.Peers.Stop()
-// 		}
-// 	}()
-// }
-
-func (d *Downloader) Download(done chan int) bool {
+func (d *Downloader) Download(done chan int, filter FilterFunc) bool {
 	green := color.New(color.FgGreen).SprintFunc()
 	fmt.Println(fmt.Sprintf("Download site: %s", green(d.Address)))
 
@@ -87,7 +65,7 @@ func (d *Downloader) Download(done chan int) bool {
 	d.Tasks = tasks.Tasks{tasks.NewTask("content.json", "", 0, d.Address, d.OnChanges)}
 
 	go d.Peers.Announce()
-	d.processContent()
+	d.processContent(filter)
 	log.Println(fmt.Sprintf("Files in queue: %s", green(len(d.Tasks)-1)))
 	sort.Sort(d.Tasks)
 	for _, task := range d.Tasks {
@@ -108,7 +86,10 @@ func (d *Downloader) Download(done chan int) bool {
 				t = d.Tasks[n]
 			}
 			if n >= 0 {
-				fmt.Println("new peer", p, "get", t)
+				log.WithFields(log.Fields{
+					"task": t,
+					"peer": p,
+				}).Debug("New new peer ->")
 				go d.ScheduleFileForPeer(t, p)
 			}
 		}
@@ -123,18 +104,23 @@ func (d *Downloader) GetContent() (*gabs.Container, error) {
 	return utils.LoadJSON(filename)
 }
 
-func (d *Downloader) processContent() *tasks.FileTask {
+func (d *Downloader) processContent(filter FilterFunc) *tasks.FileTask {
 	d.ContentRequested = true
 	task := d.ScheduleFile(d.Tasks[0])
 	content, _ := gabs.ParseJSON(task.Content)
 	d.Content = content
 	files, _ := content.S("files").ChildrenMap()
 	for filename, child := range files {
+		if filter != nil && !filter(filename) {
+			continue
+		}
 		file := child.Data().(map[string]interface{})
 		t := tasks.NewTask(filename, file["sha512"].(string), file["size"].(float64), d.Address, d.OnChanges)
 		d.Tasks = append(d.Tasks, t)
 		d.Files[t.Filename] = t
-		fmt.Println("add", filename, t)
+		log.WithFields(log.Fields{
+			"task": task,
+		}).Debug("New task")
 	}
 	d.TotalFiles = len(files) + 1 //content.json
 	return task
@@ -161,7 +147,7 @@ func (d *Downloader) ScheduleFileForPeer(task *tasks.FileTask, peer interfaces.I
 
 func (d *Downloader) ScheduleFile(task *tasks.FileTask) *tasks.FileTask {
 	d.StartedTasks++
-	if d.PendingTasks() == 0 {
+	if d.PendingTasksCount() == 0 {
 		return nil
 	}
 	peer := d.Peers.Get()
@@ -173,20 +159,30 @@ func (d *Downloader) ScheduleFile(task *tasks.FileTask) *tasks.FileTask {
 	return d.ScheduleFileForPeer(task, peer)
 }
 
-func (d *Downloader) PendingTasks() int {
+func (d *Downloader) PendingTasksCount() int {
 	n := 0
 	for _, task := range d.Tasks {
-		if len(task.Content) == 0 {
+		if !task.Done {
 			n++
 		}
 	}
 	return n
 }
 
+func (d *Downloader) PendingTasks() tasks.Tasks {
+	res := tasks.Tasks{}
+	for _, task := range d.Tasks {
+		if !task.Done {
+			res = append(res, task)
+		}
+	}
+	return res
+}
+
 func (d *Downloader) FinishedTasks() int {
 	n := 0
 	for _, task := range d.Tasks {
-		if len(task.Content) != 0 {
+		if task.Done {
 			n++
 		}
 	}

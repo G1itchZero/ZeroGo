@@ -7,9 +7,11 @@ import (
 	"path"
 	"time"
 
+	"github.com/G1itchZero/zeronet-go/downloader"
 	"github.com/G1itchZero/zeronet-go/site"
 	"github.com/G1itchZero/zeronet-go/utils"
 	"github.com/Jeffail/gabs"
+	log "github.com/Sirupsen/logrus"
 )
 
 type SiteManager struct {
@@ -35,6 +37,18 @@ func (sm *SiteManager) Get(address string) *site.Site {
 	s, ok := sm.Sites[address]
 	if !ok {
 		s = site.NewSite(address)
+		s.Added = int(time.Now().Unix())
+		sm.Sites[address] = s
+	}
+	go sm.processSite(s)
+	return s
+}
+
+func (sm *SiteManager) GetFiles(address string, filter downloader.FilterFunc) *site.Site {
+	s, ok := sm.Sites[address]
+	if !ok {
+		s = site.NewSite(address)
+		s.Filter = filter
 		s.Added = int(time.Now().Unix())
 		sm.Sites[address] = s
 	}
@@ -71,7 +85,9 @@ func (sm *SiteManager) updateSites() {
 	if s != nil {
 		sites, _ := s.ChildrenMap()
 		for address := range sites {
-			fmt.Println("preload", address)
+			log.WithFields(log.Fields{
+				"address": address,
+			}).Debug("Preload site")
 			sm.Sites[address] = site.NewSite(address)
 		}
 	}

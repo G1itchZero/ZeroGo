@@ -3,7 +3,6 @@ package site
 import (
 	"fmt"
 	"io/ioutil"
-	"log"
 	"os"
 	"path"
 	"sync"
@@ -13,6 +12,7 @@ import (
 	"github.com/G1itchZero/zeronet-go/events"
 	"github.com/G1itchZero/zeronet-go/utils"
 	"github.com/Jeffail/gabs"
+	log "github.com/Sirupsen/logrus"
 )
 
 type Site struct {
@@ -25,6 +25,7 @@ type Site struct {
 	Ready      bool
 	Success    bool
 	OnChanges  chan events.SiteEvent
+	Filter     downloader.FilterFunc
 	sync.Mutex
 }
 
@@ -61,7 +62,7 @@ func (site *Site) Download(ch chan *Site) {
 	done := make(chan int)
 	go func() {
 		site.Lock()
-		site.Success = site.Downloader.Download(done)
+		site.Success = site.Downloader.Download(done, site.Filter)
 		go site.handleEvents()
 		site.Unlock()
 	}()
@@ -75,7 +76,6 @@ func (site *Site) handleEvents() {
 	for {
 		select {
 		case peersCount := <-site.Downloader.Peers.OnAnnounce:
-			fmt.Printf("----%d----\n", peersCount)
 			site.OnChanges <- events.SiteEvent{Type: "peers_added", Payload: peersCount}
 		}
 	}
@@ -92,25 +92,33 @@ func (site *Site) GetFile(filename string) ([]byte, error) {
 func (site *Site) Remove() {
 	err := os.RemoveAll(site.Path)
 	if err != nil {
-		log.Println(site.Path, err)
+		log.WithFields(log.Fields{
+			"site": site.Path,
+			"err":  err,
+		}).Error("Error during site removing")
 	}
 }
 
 func (site *Site) Wait() {
-	site.Lock()
-	site.Unlock()
+	for site.Downloader.PendingTasksCount() > 0 {
+		fmt.Println("Files left:", site.Downloader.PendingTasksCount())
+		time.Sleep(time.Millisecond * 100)
+	}
 }
 
 func (site *Site) WaitFile(filename string) {
 	task, ok := site.Downloader.Files[filename]
 	for !ok {
 		task, ok = site.Downloader.Files[filename]
-		fmt.Println("waiting for", task, filename, ok, site.Downloader.Files)
+		// fmt.Println("waiting for", task, filename, ok, site.Downloader.Files)
 		time.Sleep(time.Duration(time.Millisecond * 100))
 	}
 	n := 0
 	for !task.Done {
 		fmt.Println("waiting for", task)
+		log.WithFields(log.Fields{
+			"task": task,
+		}).Info("Waiting for file")
 		time.Sleep(time.Duration(time.Millisecond * 100))
 		n++
 		task.Priority++
@@ -119,7 +127,6 @@ func (site *Site) WaitFile(filename string) {
 			n = 0
 		}
 	}
-	fmt.Println(task, "done")
 }
 
 func (site *Site) GetSettings() SiteSettings {
