@@ -36,6 +36,16 @@ func NewServer(port int, sites *site_manager.SiteManager) *Server {
 	return &server
 }
 
+func NoCacheMiddleware(next echo.HandlerFunc) echo.HandlerFunc {
+	return func(ctx echo.Context) error {
+		ctx.Response().Header().Set("Cache-Control", "no-cache, private, max-age=0, no-store, must-revalidate")
+		ctx.Response().Header().Set("Expires", time.Unix(0, 0).Format(http.TimeFormat))
+		ctx.Response().Header().Set("Pragma", "no-cache")
+		ctx.Response().Header().Set("X-Accel-Expires", "0")
+		return next(ctx)
+	}
+}
+
 func InnerMiddleware(next echo.HandlerFunc) echo.HandlerFunc {
 	return func(ctx echo.Context) error {
 		if ctx.Path() == "/inner/:site" {
@@ -72,10 +82,12 @@ func (s *Server) socketHandler(c echo.Context) error {
 
 func (s *Server) Serve() {
 	e := echo.New()
+	e.Use(NoCacheMiddleware)
 	e.Static("/uimedia", path.Join(utils.GetDataPath(), utils.ZN_UPDATE, "ZeroNet", "src", "Ui", "media"))
 
 	inner := e.Group("/inner")
 	inner.Use(InnerMiddleware)
+	inner.Use(NoCacheMiddleware)
 	inner.GET("/:site", s.serveInner)
 	inner.GET("/*", s.serveInnerStatic)
 
