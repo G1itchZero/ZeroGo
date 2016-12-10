@@ -1,11 +1,10 @@
-package main
+package peer
 
 import (
 	"crypto/tls"
 	"encoding/binary"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"math"
 	"net"
 	"os"
@@ -13,6 +12,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/G1itchZero/zeronet-go/interfaces"
+	"github.com/G1itchZero/zeronet-go/utils"
 	_ "github.com/Sirupsen/logrus"
 	msgpack "gopkg.in/vmihailenco/msgpack.v2"
 )
@@ -61,18 +62,51 @@ type Response struct {
 }
 
 type Peer struct {
-	State      State
-	Address    string
-	Port       uint64
-	Connection *tls.Conn
-	ReqID      int
-	Tasks      Tasks
-	Cancel     chan struct{}
-	buffers    map[int][]byte
-	chans      map[int]chan Response
-	Ticker     *time.Ticker
-	Listening  bool
+	State       State
+	Address     string
+	Port        uint64
+	Connection  *tls.Conn
+	ReqID       int
+	Tasks       []interfaces.ITask
+	ActiveTasks int
+	Cancel      chan struct{}
+	buffers     map[int][]byte
+	chans       map[int]chan Response
+	Ticker      *time.Ticker
+	Listening   bool
+	Free        chan *Peer
 	sync.Mutex
+}
+
+func (peer *Peer) AddTask(task interfaces.ITask) {
+	peer.Tasks = append(peer.Tasks, task)
+	peer.Download(task)
+	peer.Free <- peer
+}
+
+func (peer *Peer) RemoveTask(task interfaces.ITask) {
+	i := func() int {
+		i := 0
+		for _, b := range peer.Tasks {
+			if b.GetSite() == task.GetSite() {
+				return i
+			}
+			i++
+		}
+		return -1
+	}()
+	if i == -1 {
+		return
+	}
+	peer.Tasks = append(peer.Tasks[:i], peer.Tasks[i+1:]...)
+}
+
+func (peer *Peer) String() string {
+	return fmt.Sprintf("<Peer: %s:%d (tasks: %d)>", peer.Address, peer.Port, peer.ActiveTasks)
+}
+
+func (peer *Peer) GetAddress() string {
+	return peer.Address
 }
 
 func (peer *Peer) send(request Request) Response {
@@ -98,10 +132,13 @@ func (peer *Peer) Stop() {
 }
 
 func (peer *Peer) handleAnswers() {
-	for peer.Listening {
+	for {
+		if !peer.Listening {
+			return
+		}
 		dl := time.Now().Add(20 * time.Second)
 		peer.Connection.SetReadDeadline(dl)
-		fmt.Printf("Set deadline: %s %v\n", dl, peer.Listening)
+		// fmt.Printf("%s:%d - Set deadline: %s %v\n", peer.Address, peer.Port, dl, peer.Listening)
 		message := make([]byte, 1024*16)
 		peer.Lock()
 		_, _ = peer.Connection.Read(message)
@@ -133,25 +170,26 @@ func (peer *Peer) handleAnswers() {
 	}
 }
 
-func (peer *Peer) Download(task *FileTask) []byte {
+func (peer *Peer) Download(task interfaces.ITask) []byte {
+	task.Start()
+	peer.ActiveTasks++
 	peer.Tasks = append(peer.Tasks, task)
-	site := task.Site
-	innerPath := task.Filename
-	filename := path.Join(DATA, site, innerPath)
+	filename := path.Join(utils.GetDataPath(), task.GetSite(), task.GetFilename())
 	os.MkdirAll(path.Dir(filename), 0777)
 	location := 0
 	request := Request{
 		Cmd: "streamFile",
 		Params: RequestFile{
-			Site:      site,
-			InnerPath: innerPath,
+			Site:      task.GetSite(),
+			InnerPath: task.GetFilename(),
 			Location:  location,
 		},
 	}
 	message := peer.send(request)
-	ioutil.WriteFile(filename, message.Buffer, 0644)
-	task.Content = message.Buffer
-	return task.Content
+	task.SetContent(message.Buffer)
+	peer.RemoveTask(task)
+	peer.ActiveTasks--
+	return task.GetContent()
 }
 
 func (peer *Peer) Ping() {
@@ -169,10 +207,10 @@ func (peer *Peer) Handshake() Response {
 	hs := Request{
 		Cmd: "handshake",
 		Params: Handshake{
-			Version:        VERSION,
-			Rev:            REV,
+			Version:        utils.VERSION,
+			Rev:            utils.REV,
 			Protocol:       "v2",
-			PeerID:         PEER_ID,
+			PeerID:         utils.GetPeerID(),
 			FileserverPort: 0,
 			PortOpened:     false,
 			TargetIP:       peer.Address,
@@ -185,9 +223,9 @@ func (peer *Peer) Handshake() Response {
 
 func (peer *Peer) Connect() error {
 	peer.State = Connecting
-	certFilename := path.Join(DATA, "cert-rsa.pem")
-	keyFilename := path.Join(DATA, "key-rsa.pem")
-	cert, err := tls.LoadX509KeyPair(certFilename, keyFilename)
+	certFilename := path.Join(utils.GetDataPath(), "cert-rsa.pem")
+	keyFilename := path.Join(utils.GetDataPath(), "key-rsa.pem")
+	cert, _ := tls.LoadX509KeyPair(certFilename, keyFilename)
 	conn, err := tls.DialWithDialer(&net.Dialer{
 		Deadline: time.Now().Add(10 * time.Second),
 		Timeout:  time.Second * 5,
@@ -210,29 +248,37 @@ func (peer *Peer) Connect() error {
 		}()
 		peer.Handshake()
 		peer.Ticker = time.NewTicker(time.Second * 5)
-		go func() {
-			for _ = range peer.Ticker.C {
-				if peer.Listening {
-					peer.Ping()
-				} else {
-					return
-				}
-			}
-		}()
+		// go func() {
+		// 	for _ = range peer.Ticker.C {
+		// 		if peer.Listening {
+		// 			peer.Ping()
+		// 		} else {
+		// 			return
+		// 		}
+		// 	}
+		// }()
 	}
 	return err
 }
 
-func NewPeer(info io.Reader) *Peer {
+func NewPeer(info io.Reader, ch chan *Peer) *Peer {
 	addr := [4]byte{}
 	port := [2]byte{}
 	binary.Read(info, binary.BigEndian, &addr)
 	binary.Read(info, binary.BigEndian, &port)
-	peer := Peer{State: Disconnected, Cancel: make(chan struct{})}
-	peer.Listening = true
-	peer.Address = fmt.Sprintf("%d.%d.%d.%d", addr[0], addr[1], addr[2], addr[3])
-	peer.Port = binary.BigEndian.Uint64([]byte{0, 0, 0, 0, 0, 0, port[0], port[1]})
-	peer.buffers = map[int][]byte{}
-	peer.chans = map[int]chan Response{}
+	if port[0] == 0 && port[1] == 0 {
+		return nil
+	}
+	peer := Peer{
+		State:       Disconnected,
+		Cancel:      make(chan struct{}),
+		Listening:   true,
+		Address:     fmt.Sprintf("%d.%d.%d.%d", addr[0], addr[1], addr[2], addr[3]),
+		Port:        binary.BigEndian.Uint64([]byte{0, 0, 0, 0, 0, 0, port[0], port[1]}),
+		buffers:     map[int][]byte{},
+		chans:       map[int]chan Response{},
+		ActiveTasks: 0,
+		Free:        ch,
+	}
 	return &peer
 }

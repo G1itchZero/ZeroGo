@@ -1,4 +1,4 @@
-package main
+package socket
 
 import (
 	"encoding/json"
@@ -6,6 +6,9 @@ import (
 	"sync"
 	"time"
 
+	"github.com/G1itchZero/zeronet-go/site"
+	"github.com/G1itchZero/zeronet-go/site_manager"
+	"github.com/G1itchZero/zeronet-go/utils"
 	"github.com/Jeffail/gabs"
 	log "github.com/Sirupsen/logrus"
 	websocket "github.com/gorilla/websocket"
@@ -14,18 +17,20 @@ import (
 type UiSocket struct {
 	WrapperKey   string
 	Connection   *websocket.Conn
-	Site         *Site
+	Site         *site.Site
+	SiteManager  *site_manager.SiteManager
 	Disconnected chan int
 	MsgID        int
 	sync.Mutex
 }
 
-func NewUiSocket(site *Site, wrapperKey string) *UiSocket {
+func NewUiSocket(s *site.Site, sm *site_manager.SiteManager, wrapperKey string) *UiSocket {
 	socket := UiSocket{
 		WrapperKey:   wrapperKey,
 		Disconnected: make(chan int),
-		Site:         site,
+		Site:         s,
 		MsgID:        1,
+		SiteManager:  sm,
 	}
 	return &socket
 }
@@ -80,7 +85,12 @@ func (socket *UiSocket) Serve(ws *websocket.Conn) {
 		case "siteInfo":
 			go func(message Message) {
 				// socket.Site.Wait()
-				socket.Response(message.ID, socket.Site.GetInfo())
+				info := socket.Site.GetInfo()
+				params := message.Params.(map[string]interface{})
+				if params["file_status"] != nil {
+					info.Event = []interface{}{"file_done", params["file_status"]}
+				}
+				socket.Response(message.ID, info)
 			}(message)
 		case "siteList":
 			go socket.siteList(message)
@@ -93,15 +103,15 @@ func (socket *UiSocket) Serve(ws *websocket.Conn) {
 }
 
 func (socket *UiSocket) siteDelete(message Message) {
-	socket.Site.Manager.Remove(message.Params.(map[string]interface{})["address"].(string))
+	socket.SiteManager.Remove(message.Params.(map[string]interface{})["address"].(string))
 	socket.Notification("done", "Site deleted.")
 }
 
 func (socket *UiSocket) siteList(message Message) {
-	sites := []SiteInfo{}
-	infos, _ := socket.Site.Manager.GetSites().ChildrenMap()
-	for _, site := range infos {
-		sites = append(sites, site.Data().(SiteInfo))
+	sites := []site.SiteInfo{}
+	infos, _ := socket.SiteManager.GetSites().ChildrenMap()
+	for _, s := range infos {
+		sites = append(sites, s.Data().(site.SiteInfo))
 	}
 	socket.Response(message.ID, sites)
 }
@@ -174,10 +184,10 @@ func GetServerInfo() ServerInfo {
 		MasterAddress:  "15Ni39HLKXmnXHRkuh8Cpj43AtDfTwc9Gv",
 		Language:       "en",
 		UIPort:         43111,
-		Rev:            REV,
+		Rev:            utils.REV,
 		UIIP:           "127.0.0.1",
 		Platform:       "linux",
-		Version:        VERSION,
+		Version:        utils.VERSION,
 		TorStatus:      "Not implemented",
 		Debug:          false,
 	}

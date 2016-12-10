@@ -1,42 +1,40 @@
-package main
+package site
 
 import (
+	"fmt"
 	"io/ioutil"
 	"log"
 	"os"
 	"path"
 	"sync"
+	"time"
 
+	"github.com/G1itchZero/zeronet-go/downloader"
+	"github.com/G1itchZero/zeronet-go/events"
+	"github.com/G1itchZero/zeronet-go/utils"
 	"github.com/Jeffail/gabs"
 )
-
-type SiteEvent struct {
-	Type    string
-	Payload interface{}
-}
 
 type Site struct {
 	Address    string
 	Path       string
 	Content    *gabs.Container
 	Done       chan *Site
-	Downloader *Downloader
-	Manager    *SiteManager
+	Downloader *downloader.Downloader
 	Added      int
 	Ready      bool
 	Success    bool
-	OnChanges  chan SiteEvent
+	OnChanges  chan events.SiteEvent
 	sync.Mutex
 }
 
-func NewSite(address string, sm *SiteManager) *Site {
+func NewSite(address string) *Site {
 	done := make(chan *Site, 2)
 	site := Site{
 		Address:    address,
-		Path:       path.Join(DATA, address),
+		Path:       path.Join(utils.GetDataPath(), address),
 		Done:       done,
-		Downloader: NewDownloader(address),
-		Manager:    sm,
+		Downloader: downloader.NewDownloader(address),
 		Ready:      false,
 		Success:    false,
 	}
@@ -54,23 +52,33 @@ func NewSite(address string, sm *SiteManager) *Site {
 }
 
 func (site *Site) Download(ch chan *Site) {
-	site.Lock()
 	site.Done = ch
-	if site.Downloader.TotalFiles != 0 && len(site.Downloader.Done) == site.Downloader.TotalFiles {
+	if site.Downloader.TotalFiles != 0 && site.Downloader.FinishedTasks() == site.Downloader.TotalFiles {
 		site.Ready = true
-		site.Unlock()
 		site.Done <- site
 		return
 	}
 	done := make(chan int)
 	go func() {
+		site.Lock()
 		site.Success = site.Downloader.Download(done)
+		go site.handleEvents()
+		site.Unlock()
 	}()
 	<-done
 	site.Content = site.Downloader.Content
 	site.Ready = true
-	site.Unlock()
 	site.Done <- site
+}
+
+func (site *Site) handleEvents() {
+	for {
+		select {
+		case peersCount := <-site.Downloader.Peers.OnAnnounce:
+			fmt.Printf("----%d----\n", peersCount)
+			site.OnChanges <- events.SiteEvent{Type: "peers_added", Payload: peersCount}
+		}
+	}
 }
 
 func (site *Site) GetFile(filename string) ([]byte, error) {
@@ -91,6 +99,27 @@ func (site *Site) Remove() {
 func (site *Site) Wait() {
 	site.Lock()
 	site.Unlock()
+}
+
+func (site *Site) WaitFile(filename string) {
+	task, ok := site.Downloader.Files[filename]
+	for !ok {
+		task, ok = site.Downloader.Files[filename]
+		fmt.Println("waiting for", task, filename, ok, site.Downloader.Files)
+		time.Sleep(time.Duration(time.Millisecond * 100))
+	}
+	n := 0
+	for !task.Done {
+		fmt.Println("waiting for", task)
+		time.Sleep(time.Duration(time.Millisecond * 100))
+		n++
+		task.Priority++
+		if n > 20 {
+			go site.Downloader.ScheduleFile(task)
+			n = 0
+		}
+	}
+	fmt.Println(task, "done")
 }
 
 func (site *Site) GetSettings() SiteSettings {
@@ -128,11 +157,11 @@ func (site *Site) GetInfo() SiteInfo {
 	}
 	return SiteInfo{
 		Address:  site.Address,
-		Files:    site.Downloader.TotalFiles - 1,
+		Files:    len(site.Downloader.Tasks) - 1,
 		Peers:    site.Downloader.Peers.Count,
 		Content:  content,
-		Workers:  len(site.Downloader.Peers.BusyPeers),
-		Tasks:    len(site.Downloader.Peers.BusyPeers),
+		Workers:  len(site.Downloader.Peers.GetActivePeers()),
+		Tasks:    len(site.Downloader.Peers.GetActivePeers()),
 		Settings: site.GetSettings(),
 
 		SizeLimit:     100,
@@ -141,7 +170,7 @@ func (site *Site) GetInfo() SiteInfo {
 		// AuthKeySha512:  "",
 		// AuthKey:        "",
 		BadFiles:       0,
-		StartedTaskNum: len(site.Downloader.Peers.BusyPeers),
+		StartedTaskNum: site.Downloader.StartedTasks,
 		ContentUpdated: 0,
 	}
 }
