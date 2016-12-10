@@ -72,7 +72,7 @@ func (s *Server) socketHandler(c echo.Context) error {
 
 func (s *Server) Serve() {
 	e := echo.New()
-	e.Static("/uimedia", "./media")
+	e.Static("/uimedia", path.Join(utils.GetDataPath(), utils.ZN_UPDATE, "ZeroNet", "src", "Ui", "media"))
 
 	inner := e.Group("/inner")
 	inner.Use(InnerMiddleware)

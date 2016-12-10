@@ -2,6 +2,7 @@ package main
 
 import (
 	"os"
+	"path"
 
 	"net/http"
 	_ "net/http/pprof"
@@ -25,6 +26,12 @@ func main() {
 	go func() {
 		log.Println(http.ListenAndServe("localhost:6060", nil))
 	}()
+
+	hasMedia, _ := utils.Exists(path.Join(utils.GetDataPath(), utils.ZN_UPDATE))
+	if !hasMedia {
+		site := sm.Get(utils.ZN_UPDATE)
+		site.Wait()
+	}
 
 	s := server.NewServer(43111, sm)
 	s.Serve()

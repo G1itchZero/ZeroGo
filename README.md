@@ -4,5 +4,5 @@ Very basic ZeroNet client implementation.
 
 ## Usage
 
-* Copy ZeroBundle/ZeroNet/src/Ui/media to this folder
-* Run and go to 127.0.0.1:43111/%zite_name%
+* Run (first time it will download ZeroNet bundle from update zite)
+* Go to 127.0.0.1:43111/
