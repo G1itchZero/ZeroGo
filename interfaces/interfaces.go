@@ -8,7 +8,10 @@ type ITask interface {
 	GetFilename() string
 	GetContent() []byte
 	SetContent([]byte)
+	Start()
+	Finish()
 }
 type IPeer interface {
 	AddTask(ITask)
+	GetAddress() string
 }

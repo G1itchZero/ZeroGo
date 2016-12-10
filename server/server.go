@@ -112,15 +112,17 @@ func (s *Server) serveInner(ctx echo.Context) error {
 	root := path.Join(utils.GetDataPath(), name)
 	filename := path.Join(root, "index.html")
 	site := s.Queue[name]
-	site.Wait()
+	site.WaitFile("index.html")
 	return ctx.File(filename)
 }
 
 func (s *Server) serveInnerStatic(ctx echo.Context) error {
-	site, _ := ctx.Cookie("site")
+	name, _ := ctx.Cookie("site")
 	url := ctx.Param("*")
-	root := path.Join(utils.GetDataPath(), site.Value)
+	root := path.Join(utils.GetDataPath(), name.Value)
 	filename := path.Join(root, url)
+	site := s.Queue[name.Value]
+	site.WaitFile(url)
 	return ctx.File(filename)
 }
 

@@ -5,7 +5,6 @@ import (
 	"encoding/binary"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"math"
 	"net"
 	"os"
@@ -75,12 +74,14 @@ type Peer struct {
 	chans       map[int]chan Response
 	Ticker      *time.Ticker
 	Listening   bool
+	Free        chan *Peer
 	sync.Mutex
 }
 
 func (peer *Peer) AddTask(task interfaces.ITask) {
 	peer.Tasks = append(peer.Tasks, task)
 	peer.Download(task)
+	peer.Free <- peer
 }
 
 func (peer *Peer) RemoveTask(task interfaces.ITask) {
@@ -101,7 +102,11 @@ func (peer *Peer) RemoveTask(task interfaces.ITask) {
 }
 
 func (peer *Peer) String() string {
-	return fmt.Sprintf("%s:%d (%d)", peer.Address, peer.Port, peer.ActiveTasks)
+	return fmt.Sprintf("<Peer: %s:%d (tasks: %d)>", peer.Address, peer.Port, peer.ActiveTasks)
+}
+
+func (peer *Peer) GetAddress() string {
+	return peer.Address
 }
 
 func (peer *Peer) send(request Request) Response {
@@ -166,23 +171,21 @@ func (peer *Peer) handleAnswers() {
 }
 
 func (peer *Peer) Download(task interfaces.ITask) []byte {
+	task.Start()
 	peer.ActiveTasks++
 	peer.Tasks = append(peer.Tasks, task)
-	site := task.GetSite()
-	innerPath := task.GetFilename()
-	filename := path.Join(utils.GetDataPath(), site, innerPath)
+	filename := path.Join(utils.GetDataPath(), task.GetSite(), task.GetFilename())
 	os.MkdirAll(path.Dir(filename), 0777)
 	location := 0
 	request := Request{
 		Cmd: "streamFile",
 		Params: RequestFile{
-			Site:      site,
-			InnerPath: innerPath,
+			Site:      task.GetSite(),
+			InnerPath: task.GetFilename(),
 			Location:  location,
 		},
 	}
 	message := peer.send(request)
-	ioutil.WriteFile(filename, message.Buffer, 0644)
 	task.SetContent(message.Buffer)
 	peer.RemoveTask(task)
 	peer.ActiveTasks--
@@ -258,7 +261,7 @@ func (peer *Peer) Connect() error {
 	return err
 }
 
-func NewPeer(info io.Reader) *Peer {
+func NewPeer(info io.Reader, ch chan *Peer) *Peer {
 	addr := [4]byte{}
 	port := [2]byte{}
 	binary.Read(info, binary.BigEndian, &addr)
@@ -275,6 +278,7 @@ func NewPeer(info io.Reader) *Peer {
 		buffers:     map[int][]byte{},
 		chans:       map[int]chan Response{},
 		ActiveTasks: 0,
+		Free:        ch,
 	}
 	return &peer
 }

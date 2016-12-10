@@ -1,11 +1,13 @@
 package site
 
 import (
+	"fmt"
 	"io/ioutil"
 	"log"
 	"os"
 	"path"
 	"sync"
+	"time"
 
 	"github.com/G1itchZero/zeronet-go/downloader"
 	"github.com/G1itchZero/zeronet-go/events"
@@ -53,7 +55,6 @@ func (site *Site) Download(ch chan *Site) {
 	site.Done = ch
 	if site.Downloader.TotalFiles != 0 && site.Downloader.FinishedTasks() == site.Downloader.TotalFiles {
 		site.Ready = true
-		site.Unlock()
 		site.Done <- site
 		return
 	}
@@ -61,12 +62,23 @@ func (site *Site) Download(ch chan *Site) {
 	go func() {
 		site.Lock()
 		site.Success = site.Downloader.Download(done)
+		go site.handleEvents()
 		site.Unlock()
 	}()
 	<-done
 	site.Content = site.Downloader.Content
 	site.Ready = true
 	site.Done <- site
+}
+
+func (site *Site) handleEvents() {
+	for {
+		select {
+		case peersCount := <-site.Downloader.Peers.OnAnnounce:
+			fmt.Printf("----%d----\n", peersCount)
+			site.OnChanges <- events.SiteEvent{Type: "peers_added", Payload: peersCount}
+		}
+	}
 }
 
 func (site *Site) GetFile(filename string) ([]byte, error) {
@@ -87,6 +99,27 @@ func (site *Site) Remove() {
 func (site *Site) Wait() {
 	site.Lock()
 	site.Unlock()
+}
+
+func (site *Site) WaitFile(filename string) {
+	task, ok := site.Downloader.Files[filename]
+	for !ok {
+		task, ok = site.Downloader.Files[filename]
+		fmt.Println("waiting for", task, filename, ok, site.Downloader.Files)
+		time.Sleep(time.Duration(time.Millisecond * 100))
+	}
+	n := 0
+	for !task.Done {
+		fmt.Println("waiting for", task)
+		time.Sleep(time.Duration(time.Millisecond * 100))
+		n++
+		task.Priority++
+		if n > 20 {
+			go site.Downloader.ScheduleFile(task)
+			n = 0
+		}
+	}
+	fmt.Println(task, "done")
 }
 
 func (site *Site) GetSettings() SiteSettings {
@@ -124,7 +157,7 @@ func (site *Site) GetInfo() SiteInfo {
 	}
 	return SiteInfo{
 		Address:  site.Address,
-		Files:    site.Downloader.TotalFiles - 1,
+		Files:    len(site.Downloader.Tasks) - 1,
 		Peers:    site.Downloader.Peers.Count,
 		Content:  content,
 		Workers:  len(site.Downloader.Peers.GetActivePeers()),

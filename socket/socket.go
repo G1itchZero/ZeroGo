@@ -85,7 +85,12 @@ func (socket *UiSocket) Serve(ws *websocket.Conn) {
 		case "siteInfo":
 			go func(message Message) {
 				// socket.Site.Wait()
-				socket.Response(message.ID, socket.Site.GetInfo())
+				info := socket.Site.GetInfo()
+				params := message.Params.(map[string]interface{})
+				if params["file_status"] != nil {
+					info.Event = []interface{}{"file_done", params["file_status"]}
+				}
+				socket.Response(message.ID, info)
 			}(message)
 		case "siteList":
 			go socket.siteList(message)

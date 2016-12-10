@@ -48,7 +48,7 @@ func NewPeerManager(address string) *PeerManager {
 	pm := PeerManager{
 		Address:    address,
 		Peers:      Peers{},
-		OnPeers:    make(chan *peer.Peer),
+		OnPeers:    make(chan *peer.Peer, 100),
 		OnAnnounce: make(chan int),
 	}
 	heap.Init(&pm.Peers)
@@ -74,12 +74,17 @@ func (pm *PeerManager) Stop() {
 }
 
 func (pm *PeerManager) Get() *peer.Peer {
-	if len(pm.Peers) == 0 {
-		return nil
+	for len(pm.Peers) == 0 {
+		time.Sleep(time.Duration(time.Millisecond * 100))
 	}
-	peer := heap.Pop(&pm.Peers).(*peer.Peer)
-	fmt.Println(peer)
-	return peer
+	pm.Lock()
+	p := heap.Pop(&pm.Peers)
+	if p == nil {
+		p = pm.Get()
+	}
+	pm.Count--
+	pm.Unlock()
+	return p.(*peer.Peer)
 }
 
 func (pm *PeerManager) Announce() {
@@ -113,9 +118,9 @@ func (pm *PeerManager) Announce() {
 func (pm *PeerManager) connectPeer(peer *peer.Peer) error {
 	err := peer.Connect()
 	if err == nil {
-		log.WithFields(log.Fields{
-			"peer": peer,
-		}).Debug("Peer connected")
+		// log.WithFields(log.Fields{
+		// 	"peer": peer,
+		// }).Debug("Peer connected")
 		peer.Ping()
 	} else {
 		// log.WithFields(log.Fields{
@@ -180,7 +185,7 @@ func (pm *PeerManager) announceHTTP(tracker string) Peers {
 	peerCount := len(peerData) / 6
 	peers := Peers{}
 	for i := 0; i < peerCount; i++ {
-		peer := peer.NewPeer(peerReader)
+		peer := peer.NewPeer(peerReader, pm.OnPeers)
 		if peer == nil {
 			continue
 		}
@@ -269,7 +274,7 @@ func (pm *PeerManager) announceUDPTracker(socket *net.UDPConn, serverAddr *net.U
 	binary.Read(answer, binary.BigEndian, &s)
 	peers = Peers{}
 	for answer.Len() > 0 {
-		peer := peer.NewPeer(answer)
+		peer := peer.NewPeer(answer, pm.OnPeers)
 		if peer == nil {
 			continue
 		}
@@ -327,7 +332,7 @@ func (pq Peers) Less(i, j int) bool {
 }
 
 func (pq Peers) Swap(i, j int) {
-	pq[i], pq[j] = pq[j], pq[i]
+	// pq[i], pq[j] = pq[j], pq[i]
 }
 
 func (pq *Peers) Push(x interface{}) {
@@ -338,6 +343,9 @@ func (pq *Peers) Push(x interface{}) {
 func (pq *Peers) Pop() interface{} {
 	old := *pq
 	n := len(old)
+	if n == 0 {
+		return nil
+	}
 	item := old[n-1]
 	*pq = old[0 : n-1]
 	return item
