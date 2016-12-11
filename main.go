@@ -28,6 +28,7 @@ func main() {
 
 	debug := flag.Bool("debug", false, "debug mode")
 	port := flag.Int("port", 43111, "serving port")
+	noNewTab := flag.Bool("no-tab", false, "dont open new tab")
 	flag.Parse()
 	sm := site_manager.NewSiteManager()
 	hasMedia, _ := utils.Exists(path.Join(utils.GetDataPath(), utils.ZN_UPDATE))
@@ -47,9 +48,11 @@ func main() {
 	}
 
 	s := server.NewServer(*port, sm)
-	go func() {
-		time.Sleep(time.Second)
-		browser.OpenURL(fmt.Sprintf("http://127.0.0.1:%d", *port))
-	}()
+	if !*noNewTab {
+		go func() {
+			time.Sleep(time.Second)
+			browser.OpenURL(fmt.Sprintf("http://127.0.0.1:%d", *port))
+		}()
+	}
 	s.Serve()
 }

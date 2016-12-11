@@ -26,6 +26,7 @@ type Site struct {
 	Success    bool
 	OnChanges  chan events.SiteEvent
 	Filter     downloader.FilterFunc
+	LastPeers  int
 	sync.Mutex
 }
 
@@ -68,6 +69,7 @@ func (site *Site) Download(ch chan *Site) {
 	}()
 	<-done
 	site.Content = site.Downloader.Content
+	site.LastPeers = site.Downloader.Peers.Count
 	site.Ready = true
 	site.Done <- site
 }
@@ -149,7 +151,7 @@ func (site *Site) GetSettings() SiteSettings {
 		Peers:              site.Downloader.Peers.Count,
 		Modified:           modified,
 		SizeOptional:       0,
-		Serving:            false,
+		Serving:            true,
 		Own:                false,
 		Permissions:        []string{"ADMIN"},
 		Size:               size,
@@ -159,16 +161,18 @@ func (site *Site) GetSettings() SiteSettings {
 func (site *Site) GetInfo() SiteInfo {
 	var content interface{}
 	content = nil
+	peers := site.Downloader.Peers.Count
 	if site.Content != nil {
 		content = site.Content.Data()
+		peers = site.LastPeers
 	}
 	return SiteInfo{
 		Address:  site.Address,
 		Files:    len(site.Downloader.Tasks) - 1,
-		Peers:    site.Downloader.Peers.Count,
+		Peers:    peers,
 		Content:  content,
 		Workers:  len(site.Downloader.Peers.GetActivePeers()),
-		Tasks:    len(site.Downloader.Peers.GetActivePeers()),
+		Tasks:    site.Downloader.PendingTasksCount(),
 		Settings: site.GetSettings(),
 
 		SizeLimit:     100,

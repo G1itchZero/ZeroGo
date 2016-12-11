@@ -84,11 +84,12 @@ func (sm *SiteManager) updateSites() {
 	s, _ := loadSites()
 	if s != nil {
 		sites, _ := s.ChildrenMap()
-		for address := range sites {
+		for address, content := range sites {
 			log.WithFields(log.Fields{
 				"address": address,
 			}).Debug("Preload site")
 			sm.Sites[address] = site.NewSite(address)
+			sm.Sites[address].LastPeers = int(content.S("peers").Data().(float64))
 		}
 	}
 }

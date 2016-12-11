@@ -180,6 +180,9 @@ func (pm *PeerManager) announceHTTP(tracker string) Peers {
 	raw, _ := bencode.Decode(resp.Body)
 	resp.Body.Close()
 	data := raw.(map[string]interface{})
+	if data["peers"] == nil {
+		return Peers{}
+	}
 	peerData, _ := utils.GetBytes(data["peers"])
 	peerReader := bytes.NewReader(peerData)
 	peerCount := len(peerData) / 6
