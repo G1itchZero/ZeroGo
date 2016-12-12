@@ -9,7 +9,6 @@ import (
 	"path"
 	"time"
 
-	"github.com/G1itchZero/zeronet-go/site"
 	"github.com/G1itchZero/zeronet-go/socket"
 	"github.com/G1itchZero/zeronet-go/utils"
 
@@ -24,7 +23,6 @@ type Server struct {
 	Port    int
 	Sockets map[string]*socket.UiSocket
 	Sites   *site_manager.SiteManager
-	Queue   map[string]*site.Site
 }
 
 func NewServer(port int, sites *site_manager.SiteManager) *Server {
@@ -32,7 +30,6 @@ func NewServer(port int, sites *site_manager.SiteManager) *Server {
 		Port:    port,
 		Sockets: map[string]*socket.UiSocket{},
 		Sites:   sites,
-		Queue:   map[string]*site.Site{},
 	}
 	return &server
 }
@@ -115,9 +112,13 @@ func (s *Server) serveWrapper(ctx echo.Context) error {
 		return nil
 	}
 	st := s.Sites.Get(url)
+	if st == nil {
+		ctx.HTML(404, "No .bit name found")
+		return errors.New("No .bit name found")
+	}
 	fmt.Println(fmt.Sprintf("> %s", yellow(st.Address)))
-	s.Queue[url] = st
-	s.Queue[st.Address] = st
+	s.Sites.Sites[url] = st
+	s.Sites.Sites[st.Address] = st
 	wrapper := NewWrapper(st)
 	err := wrapper.Render(ctx)
 	if err != nil {
@@ -132,7 +133,7 @@ func (s *Server) serveInner(ctx echo.Context) error {
 	name := ctx.Param("site")
 	root := path.Join(utils.GetDataPath(), name)
 	filename := path.Join(root, "index.html")
-	site := s.Queue[name]
+	site := s.Sites.Sites[name]
 	site.WaitFile("index.html")
 	return ctx.File(filename)
 }
@@ -142,7 +143,7 @@ func (s *Server) serveInnerStatic(ctx echo.Context) error {
 	url := ctx.Param("*")
 	root := path.Join(utils.GetDataPath(), name.Value)
 	filename := path.Join(root, url)
-	site := s.Queue[name.Value]
+	site := s.Sites.Sites[name.Value]
 	site.WaitFile(url)
 	return ctx.File(filename)
 }

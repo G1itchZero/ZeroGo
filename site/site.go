@@ -16,21 +16,23 @@ import (
 )
 
 type Site struct {
-	Address    string
-	Path       string
-	Content    *gabs.Container
-	Done       chan *Site
-	Downloader *downloader.Downloader
-	Added      int
-	Ready      bool
-	Success    bool
-	OnChanges  chan events.SiteEvent
-	Filter     downloader.FilterFunc
-	LastPeers  int
+	Address     string
+	Path        string
+	Content     *gabs.Container
+	LastContent *gabs.Container
+	Done        chan *Site
+	Downloader  *downloader.Downloader
+	Added       int
+	Ready       bool
+	Success     bool
+	OnChanges   chan events.SiteEvent
+	Filter      downloader.FilterFunc
+	LastPeers   int
 	sync.Mutex
 }
 
 func NewSite(address string) *Site {
+	fmt.Println("Creating new site...")
 	done := make(chan *Site, 2)
 	site := Site{
 		Address:    address,
@@ -38,17 +40,9 @@ func NewSite(address string) *Site {
 		Done:       done,
 		Downloader: downloader.NewDownloader(address),
 		Ready:      false,
-		Success:    false,
+		Success:    true,
+		OnChanges:  make(chan events.SiteEvent),
 	}
-	// site.OnChanges = site.Downloader.OnChanges
-	// go func() {
-	// 	for {
-	// 		select {
-	// 		case event := <-site.Downloader.OnChanges:
-	// 			log.Fatal(event)
-	// 		}
-	// 	}
-	// }()
 	site.Content, _ = site.Downloader.GetContent()
 	return &site
 }
@@ -64,7 +58,11 @@ func (site *Site) Download(ch chan *Site) {
 	go func() {
 		site.Lock()
 		go site.handleEvents()
-		site.Success = site.Downloader.Download(done, site.Filter)
+		modified := 0.0
+		if site.LastContent != nil {
+			modified = site.LastContent.S("modified").Data().(float64)
+		}
+		site.Success = site.Downloader.Download(done, site.Filter, modified)
 		site.Unlock()
 	}()
 	<-done
@@ -75,10 +73,21 @@ func (site *Site) Download(ch chan *Site) {
 }
 
 func (site *Site) handleEvents() {
+	a := 0
 	for {
 		select {
 		case peersCount := <-site.Downloader.Peers.OnAnnounce:
 			site.OnChanges <- events.SiteEvent{Type: "peers_added", Payload: peersCount}
+			a++
+			if len(utils.GetTrackers()) == a && site.Downloader.Peers.Count == 0 {
+				for _, task := range site.Downloader.Files {
+					task.Finish()
+					task.Success = false
+				}
+				fmt.Println("No peers found")
+				site.OnChanges <- events.SiteEvent{Type: "file_failed", Payload: "content.json"}
+				site.Success = false
+			}
 		}
 	}
 }
@@ -108,15 +117,18 @@ func (site *Site) Wait() {
 	}
 }
 
-func (site *Site) WaitFile(filename string) {
+func (site *Site) WaitFile(filename string) bool {
 	task, ok := site.Downloader.Files[filename]
-	for !ok {
+	for !ok && site.Success {
 		task, ok = site.Downloader.Files[filename]
 		// fmt.Println("waiting for", task, filename, ok, site.Downloader.Files)
 		time.Sleep(time.Duration(time.Millisecond * 100))
 	}
+	if !site.Success {
+		return site.Success
+	}
 	n := 0
-	for !task.Done {
+	for !task.Done && site.Success {
 		fmt.Println("waiting for", task)
 		log.WithFields(log.Fields{
 			"task": task,
@@ -129,6 +141,7 @@ func (site *Site) WaitFile(filename string) {
 			n = 0
 		}
 	}
+	return task.Success
 }
 
 func (site *Site) GetSettings() SiteSettings {

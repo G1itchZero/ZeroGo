@@ -92,10 +92,12 @@ func (pm *PeerManager) Announce() {
 	for _, tracker := range pm.Trackers {
 		go func(tracker string) {
 			peers := pm.announceTracker(tracker)
+			c := 0
 			for _, p := range peers {
 				if pm.peerIsKnown(p) {
 					continue
 				}
+				c++
 				go func(p *peer.Peer) {
 					err := pm.connectPeer(p)
 					if err != nil {
@@ -106,11 +108,11 @@ func (pm *PeerManager) Announce() {
 					pm.OnPeers <- p
 				}(p)
 			}
+			pm.OnAnnounce <- c
 			log.WithFields(log.Fields{
 				"tracker": tracker,
-				"peers":   len(peers),
+				"peers":   c,
 			}).Debug("New peers added")
-			pm.OnAnnounce <- len(peers)
 		}(tracker)
 	}
 }
@@ -161,6 +163,9 @@ func (pm *PeerManager) removePeer(peer *peer.Peer) {
 }
 
 func (pm *PeerManager) peerIsKnown(peer *peer.Peer) bool {
+	if peer.Address == "0.0.0.0" || peer.Address == utils.GetExternalIP() || peer.Address == "9.12.0.6" {
+		return true
+	}
 	for _, b := range pm.Peers {
 		if b.Address == peer.Address {
 			return true
@@ -176,8 +181,16 @@ func (pm *PeerManager) announceHTTP(tracker string) Peers {
 		"tracker": tracker,
 		"params":  params,
 	}).Debug("Announce HTTP tracker")
-	resp, _ := http.Get(url)
-	raw, _ := bencode.Decode(resp.Body)
+	resp, err := http.Get(url)
+	if err != nil {
+		log.Warn(fmt.Errorf("Announce error: %v", err))
+		return Peers{}
+	}
+	raw, err := bencode.Decode(resp.Body)
+	if err != nil {
+		log.Warn(fmt.Errorf("Announce error: %v", err))
+		return Peers{}
+	}
 	resp.Body.Close()
 	data := raw.(map[string]interface{})
 	if data["peers"] == nil {

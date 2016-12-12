@@ -18,6 +18,8 @@ import (
 	"github.com/pkg/browser"
 )
 
+const VERSION string = "0.1.0"
+
 func main() {
 	os.MkdirAll(utils.GetDataPath(), 0777)
 	utils.CreateCerts()
@@ -40,16 +42,25 @@ func main() {
 		}()
 	}
 
+	sync := make(chan int)
 	if !hasMedia {
-		site := sm.GetFiles(utils.ZN_UPDATE, func(filename string) bool {
-			return strings.HasPrefix(filename, utils.ZN_MEDIA)
-		})
-		site.Wait()
+		go func() {
+			site := sm.GetFiles(utils.ZN_UPDATE, func(filename string) bool {
+				return strings.HasPrefix(filename, utils.ZN_MEDIA)
+			})
+			site.Wait()
+			sync <- 0
+		}()
+	} else {
+		go func() {
+			sync <- 0
+		}()
 	}
 	names := sm.GetFiles(utils.ZN_NAMES, func(filename string) bool {
 		return strings.HasPrefix(filename, "data/names.json")
 	})
 	names.Wait()
+	<-sync
 	sm.LoadNames()
 
 	s := server.NewServer(*port, sm)

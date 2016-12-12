@@ -24,6 +24,7 @@ type FileTask struct {
 	Done       bool
 	OnChanges  chan events.SiteEvent
 	Priority   int
+	Success    bool
 }
 
 func NewTask(filename string, hash string, size float64, site string, ch chan events.SiteEvent) *FileTask {
@@ -80,6 +81,7 @@ func (task *FileTask) Start() {
 func (task *FileTask) Finish() {
 	if !task.Done {
 		task.Done = true
+		task.Success = true
 		// task.OnChanges <- events.SiteEvent{Type: "file_done", Payload: task.Filename}
 		log.WithFields(log.Fields{
 			"task": task,

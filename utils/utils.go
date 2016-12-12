@@ -13,6 +13,7 @@ import (
 	"io/ioutil"
 	"math/big"
 	r "math/rand"
+	"net/http"
 	"os"
 	"path"
 	"strings"
@@ -160,4 +161,21 @@ func Exists(path string) (bool, error) {
 		return false, nil
 	}
 	return true, err
+}
+
+var IP string
+
+func GetExternalIP() string {
+	if IP != "" {
+		return IP
+	}
+	resp, _ := http.Get("http://myexternalip.com/raw")
+	defer resp.Body.Close()
+	ip, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		return "0.0.0.0"
+	}
+	IP = strings.Trim(string(ip), "\n ")
+	fmt.Println(IP)
+	return IP
 }

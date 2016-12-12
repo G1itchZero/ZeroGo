@@ -32,11 +32,6 @@ type Downloader struct {
 	TotalFiles       int
 	StartedTasks     int
 	OnChanges        chan events.SiteEvent
-	InProgress       bool
-	tasksDone        chan *tasks.FileTask
-	trackersDone     int
-	filesDone        int
-	done             chan int
 	sync.Mutex
 }
 
@@ -45,16 +40,13 @@ func NewDownloader(address string) *Downloader {
 		Peers:        peer_manager.NewPeerManager(address),
 		Address:      address,
 		OnChanges:    make(chan events.SiteEvent, 400),
-		tasksDone:    make(chan *tasks.FileTask, 100),
 		Files:        map[string]*tasks.FileTask{},
-		trackersDone: 0,
-		filesDone:    1,
 		StartedTasks: 0,
 	}
 	return &d
 }
 
-func (d *Downloader) Download(done chan int, filter FilterFunc) bool {
+func (d *Downloader) Download(done chan int, filter FilterFunc, modified float64) bool {
 	green := color.New(color.FgGreen).SprintFunc()
 	fmt.Println(fmt.Sprintf("Download site: %s", green(d.Address)))
 
@@ -67,6 +59,14 @@ func (d *Downloader) Download(done chan int, filter FilterFunc) bool {
 	go d.Peers.Announce()
 	d.processContent(filter)
 	d.ContentRequested = true
+	if d.Content.S("modified").Data().(float64) == modified {
+		log.Println(fmt.Sprintf("Not modified: %v", modified))
+		for _, task := range d.Tasks {
+			task.Done = true
+		}
+		done <- 0
+		return true
+	}
 	log.Println(fmt.Sprintf("Files in queue: %s", green(len(d.Tasks)-1)))
 	sort.Sort(d.Tasks)
 	for _, task := range d.Tasks {
@@ -102,6 +102,7 @@ func (d *Downloader) Download(done chan int, filter FilterFunc) bool {
 func (d *Downloader) GetContent() (*gabs.Container, error) {
 	filename := path.Join(utils.GetDataPath(), d.Address, "content.json")
 	if _, err := os.Stat(filename); err != nil {
+		fmt.Println("No downloaded content.json")
 		return nil, errors.New("Not downloaded yet")
 	}
 	return utils.LoadJSON(filename)

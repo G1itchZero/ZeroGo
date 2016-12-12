@@ -29,6 +29,7 @@ func NewSiteManager() *SiteManager {
 }
 
 func (sm *SiteManager) LoadNames() {
+	fmt.Println("Loading .bit names...")
 	names, err := utils.LoadJSON(path.Join(utils.GetDataPath(), utils.ZN_NAMES, "data/names.json"))
 	if err != nil {
 		log.Fatal(err)
@@ -49,7 +50,10 @@ func (sm *SiteManager) Get(address string) *site.Site {
 		var bit string
 		if strings.HasSuffix(address, ".bit") {
 			bit = address
-			address = sm.Names[address].(string)
+			address, ok = sm.Names[address].(string)
+			if !ok {
+				return nil
+			}
 		}
 		s = site.NewSite(address)
 		s.Added = int(time.Now().Unix())
@@ -110,8 +114,10 @@ func (sm *SiteManager) updateSites() {
 			}).Debug("Preload site")
 			sm.Sites[address] = site.NewSite(address)
 			sm.Sites[address].LastPeers = int(content.S("peers").Data().(float64))
+			sm.Sites[address].LastContent = content.S("content")
 		}
 	}
+	fmt.Println("Sites preloaded...")
 }
 
 func loadSites() (*gabs.Container, error) {

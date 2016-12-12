@@ -46,7 +46,7 @@ func (socket *UiSocket) Serve(ws *websocket.Conn) {
 	go func() {
 		for {
 			select {
-			case event := <-socket.Site.Downloader.OnChanges:
+			case event := <-socket.Site.OnChanges:
 				log.WithFields(log.Fields{
 					"event":       event,
 					"wrapper_key": socket.WrapperKey,
@@ -88,7 +88,12 @@ func (socket *UiSocket) Serve(ws *websocket.Conn) {
 				info := socket.Site.GetInfo()
 				params := message.Params.(map[string]interface{})
 				if params["file_status"] != nil {
-					info.Event = []interface{}{"file_done", params["file_status"]}
+					status := "file_done"
+					st := socket.Site.WaitFile(params["file_status"].(string))
+					if !st {
+						status = "file_failed"
+					}
+					info.Event = []interface{}{status, params["file_status"]}
 				}
 				socket.Response(message.ID, info)
 			}(message)
