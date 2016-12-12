@@ -5,6 +5,7 @@ import (
 	"io/ioutil"
 	"os"
 	"path"
+	"strings"
 	"time"
 
 	"github.com/G1itchZero/zeronet-go/downloader"
@@ -16,6 +17,7 @@ import (
 
 type SiteManager struct {
 	Sites map[string]*site.Site
+	Names map[string]interface{}
 }
 
 func NewSiteManager() *SiteManager {
@@ -24,6 +26,14 @@ func NewSiteManager() *SiteManager {
 	}
 	go sm.updateSites()
 	return &sm
+}
+
+func (sm *SiteManager) LoadNames() {
+	names, err := utils.LoadJSON(path.Join(utils.GetDataPath(), utils.ZN_NAMES, "data/names.json"))
+	if err != nil {
+		log.Fatal(err)
+	}
+	sm.Names = names.Data().(map[string]interface{})
 }
 
 func (sm *SiteManager) Remove(address string) {
@@ -36,9 +46,17 @@ func (sm *SiteManager) Remove(address string) {
 func (sm *SiteManager) Get(address string) *site.Site {
 	s, ok := sm.Sites[address]
 	if !ok {
+		var bit string
+		if strings.HasSuffix(address, ".bit") {
+			bit = address
+			address = sm.Names[address].(string)
+		}
 		s = site.NewSite(address)
 		s.Added = int(time.Now().Unix())
 		sm.Sites[address] = s
+		if bit != "" {
+			sm.Sites[bit] = s
+		}
 	}
 	go sm.processSite(s)
 	return s
@@ -60,20 +78,22 @@ func (sm *SiteManager) processSite(s *site.Site) {
 	done := make(chan *site.Site, 2)
 	s.Download(done)
 	s.Wait()
-	sm.SaveSites()
+	if s.Filter == nil {
+		sm.SaveSites()
+	}
 }
 
 func (sm *SiteManager) SaveSites() {
 	sites := sm.GetSites()
 	// log.Fatal(sites)
 	filename := path.Join(utils.GetDataPath(), "sites.json")
-	fmt.Println(ioutil.WriteFile(filename, []byte(sites.StringIndent("", "  ")), 644))
+	fmt.Println(ioutil.WriteFile(filename, []byte(sites.StringIndent("", "  ")), 0644))
 }
 
 func (sm *SiteManager) GetSites() *gabs.Container {
 	sites := gabs.New()
 	for addr, s := range sm.Sites {
-		if s.Content != nil {
+		if s.Content != nil && s.Filter == nil && !strings.HasSuffix(addr, ".bit") {
 			sites.Set(s.GetInfo(), addr)
 		}
 	}
@@ -98,7 +118,7 @@ func loadSites() (*gabs.Container, error) {
 	filename := path.Join(utils.GetDataPath(), "sites.json")
 	if _, err := os.Stat(filename); err != nil {
 		jsonObj := gabs.New()
-		ioutil.WriteFile(filename, []byte(jsonObj.String()), 666)
+		ioutil.WriteFile(filename, []byte(jsonObj.String()), 0644)
 	}
 	return utils.LoadJSON(filename)
 }

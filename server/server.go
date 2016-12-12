@@ -117,6 +117,7 @@ func (s *Server) serveWrapper(ctx echo.Context) error {
 	st := s.Sites.Get(url)
 	fmt.Println(fmt.Sprintf("> %s", yellow(st.Address)))
 	s.Queue[url] = st
+	s.Queue[st.Address] = st
 	wrapper := NewWrapper(st)
 	err := wrapper.Render(ctx)
 	if err != nil {

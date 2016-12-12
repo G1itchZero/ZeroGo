@@ -46,6 +46,11 @@ func main() {
 		})
 		site.Wait()
 	}
+	names := sm.GetFiles(utils.ZN_NAMES, func(filename string) bool {
+		return strings.HasPrefix(filename, "data/names.json")
+	})
+	names.Wait()
+	sm.LoadNames()
 
 	s := server.NewServer(*port, sm)
 	if !*noNewTab {

@@ -66,6 +66,7 @@ func (d *Downloader) Download(done chan int, filter FilterFunc) bool {
 
 	go d.Peers.Announce()
 	d.processContent(filter)
+	d.ContentRequested = true
 	log.Println(fmt.Sprintf("Files in queue: %s", green(len(d.Tasks)-1)))
 	sort.Sort(d.Tasks)
 	for _, task := range d.Tasks {

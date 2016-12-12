@@ -102,7 +102,7 @@ func (site *Site) Remove() {
 }
 
 func (site *Site) Wait() {
-	for site.Downloader.PendingTasksCount() > 0 {
+	for !site.Downloader.ContentRequested || site.Downloader.PendingTasksCount() > 0 {
 		fmt.Println("Files left:", site.Downloader.PendingTasksCount())
 		time.Sleep(time.Millisecond * 100)
 	}
