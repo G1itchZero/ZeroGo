@@ -1,10 +1,12 @@
 package site
 
 import (
+	"database/sql"
 	"fmt"
 	"io/ioutil"
 	"os"
 	"path"
+	"strings"
 	"sync"
 	"time"
 
@@ -13,6 +15,7 @@ import (
 	"github.com/G1itchZero/zeronet-go/utils"
 	"github.com/Jeffail/gabs"
 	log "github.com/Sirupsen/logrus"
+	_ "github.com/mattn/go-sqlite3"
 )
 
 type Site struct {
@@ -67,9 +70,43 @@ func (site *Site) Download(ch chan *Site) {
 	}()
 	<-done
 	site.Content = site.Downloader.Content
+	site.Content.Set(false, "cloneable")
 	site.LastPeers = site.Downloader.Peers.Count
+	site.initDB()
 	site.Ready = true
 	site.Done <- site
+}
+
+func (site *Site) initDB() {
+	filename := path.Join(site.Path, "dbschema.json")
+	if _, err := os.Stat(filename); err != nil {
+		return
+	}
+	schema, _ := utils.LoadJSON(filename)
+	dbFile := path.Join(site.Path, schema.S("db_file").Data().(string))
+	// dbName := schema.S("db_name").Data().(string)
+	tables := schema.S("tables").Data().(map[string]interface{})
+
+	os.MkdirAll(filename, 0777)
+	db, err := sql.Open("sqlite3", dbFile)
+	if err != nil {
+		log.Fatal(err)
+	}
+	for name, t := range tables {
+		table := t.(map[string]interface{})
+		var cols []string
+		for _, col := range table["cols"].([]interface{}) {
+			c := col.([]interface{})
+			cols = append(cols, fmt.Sprintf("%s %s", c[0], c[1]))
+		}
+		_, err = db.Exec(fmt.Sprintf("CREATE TABLE IF NOT EXISTS %s (%s)", name, strings.Join(cols, ", ")), nil)
+		if err != nil {
+			log.Fatal(err)
+		}
+		for _, index := range table["indexes"].([]interface{}) {
+			db.Exec(index.(string), nil)
+		}
+	}
 }
 
 func (site *Site) handleEvents() {
@@ -78,7 +115,6 @@ func (site *Site) handleEvents() {
 		select {
 		case peersCount := <-site.Downloader.Peers.OnAnnounce:
 			site.OnChanges <- events.SiteEvent{Type: "peers_added", Payload: peersCount}
-			a++
 			if len(utils.GetTrackers()) == a && site.Downloader.Peers.Count == 0 {
 				for _, task := range site.Downloader.Files {
 					task.Finish()
@@ -88,6 +124,7 @@ func (site *Site) handleEvents() {
 				site.OnChanges <- events.SiteEvent{Type: "file_failed", Payload: "content.json"}
 				site.Success = false
 			}
+			a++
 		}
 	}
 }
