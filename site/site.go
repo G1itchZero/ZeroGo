@@ -1,21 +1,19 @@
 package site
 
 import (
-	"database/sql"
 	"fmt"
 	"io/ioutil"
 	"os"
 	"path"
-	"strings"
 	"sync"
 	"time"
 
+	"github.com/G1itchZero/zeronet-go/db"
 	"github.com/G1itchZero/zeronet-go/downloader"
 	"github.com/G1itchZero/zeronet-go/events"
 	"github.com/G1itchZero/zeronet-go/utils"
 	"github.com/Jeffail/gabs"
 	log "github.com/Sirupsen/logrus"
-	_ "github.com/mattn/go-sqlite3"
 )
 
 type Site struct {
@@ -31,6 +29,7 @@ type Site struct {
 	OnChanges   chan events.SiteEvent
 	Filter      downloader.FilterFunc
 	LastPeers   int
+	DB          *db.DB
 	sync.Mutex
 }
 
@@ -83,30 +82,8 @@ func (site *Site) initDB() {
 		return
 	}
 	schema, _ := utils.LoadJSON(filename)
-	dbFile := path.Join(site.Path, schema.S("db_file").Data().(string))
-	// dbName := schema.S("db_name").Data().(string)
-	tables := schema.S("tables").Data().(map[string]interface{})
-
-	os.MkdirAll(filename, 0777)
-	db, err := sql.Open("sqlite3", dbFile)
-	if err != nil {
-		log.Fatal(err)
-	}
-	for name, t := range tables {
-		table := t.(map[string]interface{})
-		var cols []string
-		for _, col := range table["cols"].([]interface{}) {
-			c := col.([]interface{})
-			cols = append(cols, fmt.Sprintf("%s %s", c[0], c[1]))
-		}
-		_, err = db.Exec(fmt.Sprintf("CREATE TABLE IF NOT EXISTS %s (%s)", name, strings.Join(cols, ", ")), nil)
-		if err != nil {
-			log.Fatal(err)
-		}
-		for _, index := range table["indexes"].([]interface{}) {
-			db.Exec(index.(string), nil)
-		}
-	}
+	site.DB = db.NewDB(schema, site.Path)
+	site.DB.Init()
 }
 
 func (site *Site) handleEvents() {
