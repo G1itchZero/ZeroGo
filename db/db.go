@@ -22,7 +22,7 @@ type DB struct {
 func NewDB(schema *gabs.Container, p string) *DB {
 	dbFile := path.Join(p, schema.S("db_file").Data().(string))
 
-	os.MkdirAll(dbFile, 0777)
+	os.MkdirAll(path.Dir(dbFile), 0777)
 	db, err := sql.Open("sqlite3", dbFile)
 	if err != nil {
 		log.Fatal(err)
