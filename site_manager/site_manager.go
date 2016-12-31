@@ -8,9 +8,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/G1itchZero/zeronet-go/downloader"
-	"github.com/G1itchZero/zeronet-go/site"
-	"github.com/G1itchZero/zeronet-go/utils"
+	"github.com/G1itchZero/ZeroGo/downloader"
+	"github.com/G1itchZero/ZeroGo/site"
+	"github.com/G1itchZero/ZeroGo/utils"
 	"github.com/Jeffail/gabs"
 	log "github.com/Sirupsen/logrus"
 )

@@ -11,9 +11,9 @@ import (
 	"net/http"
 	_ "net/http/pprof"
 
-	"github.com/G1itchZero/zeronet-go/server"
-	"github.com/G1itchZero/zeronet-go/site_manager"
-	"github.com/G1itchZero/zeronet-go/utils"
+	"github.com/G1itchZero/ZeroGo/server"
+	"github.com/G1itchZero/ZeroGo/site_manager"
+	"github.com/G1itchZero/ZeroGo/utils"
 	log "github.com/Sirupsen/logrus"
 	"github.com/pkg/browser"
 )

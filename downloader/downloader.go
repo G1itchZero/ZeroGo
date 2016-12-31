@@ -9,11 +9,11 @@ import (
 	"sync"
 	"time"
 
-	"github.com/G1itchZero/zeronet-go/events"
-	"github.com/G1itchZero/zeronet-go/interfaces"
-	"github.com/G1itchZero/zeronet-go/peer_manager"
-	"github.com/G1itchZero/zeronet-go/tasks"
-	"github.com/G1itchZero/zeronet-go/utils"
+	"github.com/G1itchZero/ZeroGo/events"
+	"github.com/G1itchZero/ZeroGo/interfaces"
+	"github.com/G1itchZero/ZeroGo/peer_manager"
+	"github.com/G1itchZero/ZeroGo/tasks"
+	"github.com/G1itchZero/ZeroGo/utils"
 	"github.com/Jeffail/gabs"
 	"github.com/fatih/color"
 

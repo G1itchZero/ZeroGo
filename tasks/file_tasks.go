@@ -5,9 +5,9 @@ import (
 	"io/ioutil"
 	"path"
 
-	"github.com/G1itchZero/zeronet-go/events"
-	"github.com/G1itchZero/zeronet-go/interfaces"
-	"github.com/G1itchZero/zeronet-go/utils"
+	"github.com/G1itchZero/ZeroGo/events"
+	"github.com/G1itchZero/ZeroGo/interfaces"
+	"github.com/G1itchZero/ZeroGo/utils"
 	log "github.com/Sirupsen/logrus"
 )
 

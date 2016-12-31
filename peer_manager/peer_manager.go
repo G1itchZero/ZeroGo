@@ -13,8 +13,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/G1itchZero/zeronet-go/peer"
-	"github.com/G1itchZero/zeronet-go/utils"
+	"github.com/G1itchZero/ZeroGo/peer"
+	"github.com/G1itchZero/ZeroGo/utils"
 	log "github.com/Sirupsen/logrus"
 	"github.com/google/go-querystring/query"
 	bencode "github.com/jackpal/bencode-go"

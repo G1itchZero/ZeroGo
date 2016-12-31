@@ -9,10 +9,10 @@ import (
 	"path"
 	"time"
 
-	"github.com/G1itchZero/zeronet-go/socket"
-	"github.com/G1itchZero/zeronet-go/utils"
+	"github.com/G1itchZero/ZeroGo/socket"
+	"github.com/G1itchZero/ZeroGo/utils"
 
-	"github.com/G1itchZero/zeronet-go/site_manager"
+	"github.com/G1itchZero/ZeroGo/site_manager"
 	log "github.com/Sirupsen/logrus"
 	"github.com/fatih/color"
 	"github.com/gorilla/websocket"

@@ -8,10 +8,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/G1itchZero/zeronet-go/db"
-	"github.com/G1itchZero/zeronet-go/downloader"
-	"github.com/G1itchZero/zeronet-go/events"
-	"github.com/G1itchZero/zeronet-go/utils"
+	"github.com/G1itchZero/ZeroGo/db"
+	"github.com/G1itchZero/ZeroGo/downloader"
+	"github.com/G1itchZero/ZeroGo/events"
+	"github.com/G1itchZero/ZeroGo/utils"
 	"github.com/Jeffail/gabs"
 	log "github.com/Sirupsen/logrus"
 )

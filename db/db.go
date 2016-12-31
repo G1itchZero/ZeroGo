@@ -8,7 +8,7 @@ import (
 	"path"
 	"strings"
 
-	"github.com/G1itchZero/zeronet-go/utils"
+	"github.com/G1itchZero/ZeroGo/utils"
 	"github.com/Jeffail/gabs"
 	_ "github.com/mattn/go-sqlite3"
 )
