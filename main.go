@@ -29,7 +29,7 @@ func main() {
 	}).Info("Your Peer ID")
 
 	debug := flag.Bool("debug", false, "debug mode")
-	port := flag.Int("port", 43111, "serving port")
+	port := flag.Int("port", 43210, "serving port")
 	noNewTab := flag.Bool("no-tab", false, "dont open new tab")
 	flag.Parse()
 	sm := site_manager.NewSiteManager()
