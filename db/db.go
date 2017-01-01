@@ -38,12 +38,12 @@ func NewDB(schema *gabs.Container, p string) *DB {
 
 func (db *DB) creteJSONTable() {
 	_, err := db.db.Exec(`
-		CREATE TABLE json (json_id INTEGER PRIMARY KEY AUTOINCREMENT, directory VARCHAR(255), file_name VARCHAR(255))`, nil)
+		CREATE TABLE IF NOT EXISTS json (json_id INTEGER PRIMARY KEY AUTOINCREMENT, directory VARCHAR(255), file_name VARCHAR(255))`, nil)
 	if err != nil {
 		log.Fatal(err)
 	}
 	_, err = db.db.Exec(`
-		CREATE TABLE keyvalue (keyvalue_id INTEGER PRIMARY KEY AUTOINCREMENT, key TEXT, value INTEGER, json_id INTEGER)`, nil)
+		CREATE TABLE IF NOT EXISTS keyvalue (keyvalue_id INTEGER PRIMARY KEY AUTOINCREMENT, key TEXT, value INTEGER, json_id INTEGER)`, nil)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -114,6 +114,42 @@ func (db *DB) mapToField(dataField string, data *gabs.Container, jid int64) {
 	}
 }
 
+func (db *DB) Query(q string) (interface{}, error) {
+	rows, err := db.db.Query(q)
+	if err != nil {
+		return "", err
+	}
+	defer rows.Close()
+	columns, err := rows.Columns()
+	if err != nil {
+		return "", err
+	}
+	count := len(columns)
+	tableData := make([]map[string]interface{}, 0)
+	values := make([]interface{}, count)
+	valuePtrs := make([]interface{}, count)
+	for rows.Next() {
+		for i := 0; i < count; i++ {
+			valuePtrs[i] = &values[i]
+		}
+		rows.Scan(valuePtrs...)
+		entry := make(map[string]interface{})
+		for i, col := range columns {
+			var v interface{}
+			val := values[i]
+			b, ok := val.([]byte)
+			if ok {
+				v = string(b)
+			} else {
+				v = val
+			}
+			entry[col] = v
+		}
+		tableData = append(tableData, entry)
+	}
+	return tableData, nil
+}
+
 func (db *DB) Init() {
 	db.creteJSONTable()
 	db.createTables()
@@ -128,7 +164,7 @@ func (db *DB) Init() {
 				if err != nil {
 					log.Fatal(err)
 				}
-				jid := db.addJSON("", strings.Replace(mapName, db.path, "", 1))
+				jid := db.addJSON("", strings.Replace(mapName, path.Join(db.path, "data")+"/", "", 1))
 
 				dataTables := (dataMap["to_table"].([]interface{}))
 				if dataTables != nil {

@@ -103,8 +103,18 @@ func (socket *UiSocket) Serve(ws *websocket.Conn) {
 			go socket.Response(message.ID, GetServerInfo())
 		case "feedQuery":
 			go socket.feedQuery(message)
+		case "dbQuery":
+			go socket.dbQuery(message)
 		}
 	}
+}
+
+func (socket *UiSocket) dbQuery(message Message) {
+	res, err := socket.Site.DB.Query(message.Params.([]interface{})[0].(string))
+	if err != nil {
+		log.Fatal(err)
+	}
+	socket.Response(message.ID, res)
 }
 
 func (socket *UiSocket) siteDelete(message Message) {
