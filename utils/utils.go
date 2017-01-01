@@ -32,10 +32,20 @@ const REV int = 1756
 const ZN_PATH string = "ZeroNet"
 const ZN_DATA string = "data"
 const ZN_DATA_ALT string = "data_alt"
-const ZN_HOMEPAGE string = "1HeLLo4uzjaLetFx6NH3PMwFP3qbRbTf3D"
 const ZN_UPDATE string = "1UPDatEDxnvHDo7TXvq6AEBARfNkyfxsp"
+const ZN_HOMEPAGE string = "1HeLLo4uzjaLetFx6NH3PMwFP3qbRbTf3D"
 const ZN_MEDIA string = "ZeroNet/src/Ui/media"
 const ZN_NAMES string = "1Name2NXVi1RDPDgf5617UoW7xA6YrhM9F"
+
+var homepage string
+
+func SetHomepage(hp string) {
+	homepage = hp
+}
+
+func GetHomepage() string {
+	return homepage
+}
 
 func GetDataPath() string {
 	if DATA == "" {

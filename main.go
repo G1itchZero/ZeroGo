@@ -30,10 +30,12 @@ func main() {
 
 	debug := flag.Bool("debug", false, "debug mode")
 	port := flag.Int("port", 43210, "serving port")
+	homepage := flag.String("homepage", utils.ZN_HOMEPAGE, "homepage")
 	noNewTab := flag.Bool("no-tab", false, "dont open new tab")
 	flag.Parse()
 	sm := site_manager.NewSiteManager()
 	hasMedia, _ := utils.Exists(path.Join(utils.GetDataPath(), utils.ZN_UPDATE))
+	utils.SetHomepage(*homepage)
 
 	if *debug {
 		log.SetLevel(log.DebugLevel)

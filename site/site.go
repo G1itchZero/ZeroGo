@@ -82,7 +82,7 @@ func (site *Site) initDB() {
 		return
 	}
 	schema, _ := utils.LoadJSON(filename)
-	site.DB = db.NewDB(schema, site.Path)
+	site.DB = db.NewDB(site.Address, schema, site.Path)
 	site.DB.Init()
 }
 

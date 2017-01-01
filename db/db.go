@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"time"
 
 	"github.com/G1itchZero/ZeroGo/utils"
 	"github.com/Jeffail/gabs"
@@ -19,9 +20,10 @@ type DB struct {
 	db     *sql.DB
 	schema *gabs.Container
 	path   string
+	site   string
 }
 
-func NewDB(schema *gabs.Container, p string) *DB {
+func NewDB(site string, schema *gabs.Container, p string) *DB {
 	dbFile := path.Join(p, schema.S("db_file").Data().(string))
 
 	os.MkdirAll(path.Dir(dbFile), 0777)
@@ -32,7 +34,8 @@ func NewDB(schema *gabs.Container, p string) *DB {
 	return &DB{
 		db:     db,
 		schema: schema,
-		path:   p,
+		path:   path.Dir(dbFile),
+		site:   site,
 	}
 }
 
@@ -115,6 +118,9 @@ func (db *DB) mapToField(dataField string, data *gabs.Container, jid int64) {
 }
 
 func (db *DB) Query(q string) (interface{}, error) {
+	for db.db == nil {
+		time.Sleep(time.Millisecond * 100)
+	}
 	rows, err := db.db.Query(q)
 	if err != nil {
 		return "", err
@@ -155,7 +161,7 @@ func (db *DB) Init() {
 	db.createTables()
 	maps := db.schema.S("maps").Data().(map[string]interface{})
 	for mapRe, dm := range maps {
-		filepath.Walk(path.Join(db.path, "data"), func(filepath string, f os.FileInfo, err error) error {
+		filepath.Walk(path.Join(utils.GetDataPath(), db.site), func(filepath string, f os.FileInfo, err error) error {
 			match, _ := regexp.MatchString(mapRe, filepath)
 			if match {
 				mapName := filepath
@@ -164,17 +170,17 @@ func (db *DB) Init() {
 				if err != nil {
 					log.Fatal(err)
 				}
-				jid := db.addJSON("", strings.Replace(mapName, path.Join(db.path, "data")+"/", "", 1))
+				jid := db.addJSON("", strings.Replace(mapName, db.path+"/", "", 1))
 
-				dataTables := (dataMap["to_table"].([]interface{}))
-				if dataTables != nil {
+				if dataMap["to_table"] != nil {
+					dataTables := (dataMap["to_table"].([]interface{}))
 					for _, dt := range dataTables {
 						dataTable := dt.(string)
 						db.mapToTable(dataTable, data, jid)
 					}
 				}
-				dataFields := (dataMap["to_keyvalue"].([]interface{}))
-				if dataFields != nil {
+				if dataMap["to_keyvalue"] != nil {
+					dataFields := (dataMap["to_keyvalue"].([]interface{}))
 					for _, dt := range dataFields {
 						dataField := dt.(string)
 						db.mapToField(dataField, data, jid)

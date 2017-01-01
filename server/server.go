@@ -106,7 +106,7 @@ func (s *Server) serveWrapper(ctx echo.Context) error {
 	yellow := color.New(color.FgYellow).SprintFunc()
 	url := ctx.Param("url")
 	if url == "" {
-		url = utils.ZN_HOMEPAGE
+		url = utils.GetHomepage()
 	}
 	if url == "favicon.ico" {
 		return nil

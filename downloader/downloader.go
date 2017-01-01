@@ -114,6 +114,15 @@ func (d *Downloader) processContent(filter FilterFunc) *tasks.FileTask {
 	content, _ := gabs.ParseJSON(task.Content)
 	d.Content = content
 	files, _ := content.S("files").ChildrenMap()
+	includes, _ := content.S("includes").ChildrenMap()
+	if includes != nil {
+		for k := range includes {
+			info, _ := gabs.Consume(map[string]interface{}{
+				"sha512": "", "size": 1024000.0,
+			})
+			files[k] = info
+		}
+	}
 	for filename, child := range files {
 		if filter != nil && !filter(filename) {
 			continue
