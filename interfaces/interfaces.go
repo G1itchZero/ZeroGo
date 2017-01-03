@@ -8,10 +8,10 @@ type ITask interface {
 	GetFilename() string
 	GetContent() []byte
 	GetStarted() bool
-	SetContent([]byte)
 	AppendContent([]byte, int)
 	GetSize() int64
 	Start()
+	Check()
 	Finish()
 }
 type IPeer interface {

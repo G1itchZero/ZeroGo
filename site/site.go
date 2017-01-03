@@ -80,6 +80,7 @@ func (site *Site) Download(ch chan *Site) {
 }
 
 func (site *Site) initDB() {
+	log.Println("initDB")
 	filename := path.Join(site.Path, "dbschema.json")
 	if _, err := os.Stat(filename); err != nil {
 		return
@@ -87,6 +88,7 @@ func (site *Site) initDB() {
 	schema, _ := utils.LoadJSON(filename)
 	site.DB = db.NewDB(site.Address, schema, site.Path)
 	site.DB.Init()
+	log.Println("DB inited")
 }
 
 func (site *Site) handleEvents() {

@@ -119,6 +119,7 @@ func (db *DB) mapToField(dataField string, data *gabs.Container, jid int64) {
 }
 
 func (db *DB) Query(q string) (interface{}, error) {
+	log.Println(q)
 	if q == "" {
 		return nil, errors.New("empty query")
 	}
@@ -157,6 +158,7 @@ func (db *DB) Query(q string) (interface{}, error) {
 		}
 		tableData = append(tableData, entry)
 	}
+	log.Println(tableData)
 	return tableData, nil
 }
 

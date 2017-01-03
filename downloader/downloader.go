@@ -116,7 +116,7 @@ func (d *Downloader) GetContent() (*gabs.Container, error) {
 func (d *Downloader) processContent(filter FilterFunc) *tasks.FileTask {
 	d.ContentRequested = true
 	task := d.ScheduleFile(d.Tasks[0])
-	content, _ := gabs.ParseJSON(task.Content)
+	content, _ := gabs.ParseJSON(task.GetContent())
 	d.Content = content
 	files, _ := content.S("files").ChildrenMap()
 	includes, _ := content.S("includes").ChildrenMap()

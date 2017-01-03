@@ -204,28 +204,26 @@ func (peer *Peer) Download(task interfaces.ITask) ([]byte, error) {
 	}
 	message := peer.send(&request)
 	content := message.Buffer
-	if task.GetSize() != 0 && len(content) != int(peer.sizes[request.ReqID]) {
-    task.AppendContent(message.Buffer, location)
-		for len(content) != int(peer.sizes[request.ReqID]) {
+  task.AppendContent(message.Buffer, location)
+  s := int(peer.sizes[request.ReqID])
+  l := len(content)
+	if task.GetSize() != 0 && l != int(s) {
+		for l != s {
 			// log.Warn(task, len(message.Buffer), peer.sizes[request.ReqID])
 			location += len(content)
-			request = Request{
-				Cmd: "streamFile",
-				Params: RequestFile{
-					Site:      task.GetSite(),
-					InnerPath: task.GetFilename(),
-					Location:  location,
-				},
-				Size: task.GetSize(),
+			request.Params = RequestFile{
+				Site:      task.GetSite(),
+				InnerPath: task.GetFilename(),
+				Location:  location,
 			}
 			message = peer.send(&request)
-			// fmt.Println(location, message.To, len(message.Buffer), message.Body, message.StreamBytes, message.Size, message.Location)
-			// fmt.Println(string(message.Buffer))
       task.AppendContent(message.Buffer, location)
 		}
-	} else {
-		task.SetContent(content)
 	}
+  if len(content) == 0 {
+    task.Check()
+  }
+  task.Finish()
 	peer.RemoveTask(task)
 	peer.ActiveTasks--
 	return task.GetContent(), res

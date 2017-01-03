@@ -62,7 +62,11 @@ func (task *FileTask) GetFilename() string {
 }
 
 func (task *FileTask) GetContent() []byte {
-	return task.Content
+	content, err := ioutil.ReadFile(task.FullPath)
+	if err != nil {
+		log.Fatal(err)
+	}
+	return content
 }
 
 func (task *FileTask) GetSize() int64 {
@@ -70,6 +74,9 @@ func (task *FileTask) GetSize() int64 {
 }
 
 func (task *FileTask) AppendContent(content []byte, location int) {
+	if location == 0 && task.Stream != nil {
+		return
+	}
 	if task.Stream == nil {
     var err error
 		task.Stream, err = os.Create(task.FullPath)
@@ -79,26 +86,17 @@ func (task *FileTask) AppendContent(content []byte, location int) {
 	}
   if (location == 0 && task.Location == 0) || location > task.Location {
     task.Location = location
-    // defer out.Close()
     io.Copy(task.Stream, bytes.NewReader(content))
   }
 }
 
-func (task *FileTask) SetContent(content []byte) {
-	// if len(task.Content) > 0 {
-	// 	return
-	// }
-	task.Content = content
-	hash := fmt.Sprintf("%x", sha512.Sum512(task.Content))[0:64]
-	err := ioutil.WriteFile(task.FullPath, task.Content, 0644)
+func (task *FileTask) Check() {
+  fc, _ := ioutil.ReadFile(task.FullPath)
+	hash := fmt.Sprintf("%x", sha512.Sum512(fc))[0:64]
 	if task.Hash != "" && task.Hash != hash {
-		fmt.Printf("Size error '%s': %d != %d\n", task.FullPath, int(task.Size), len(task.Content))
+		// fmt.Printf("Size error '%s': %d != %d\n", task.FullPath, int(task.Size), len(task.Content))
 		log.Fatal(fmt.Errorf("Hash error '%s': %s != %s", task.FullPath, task.Hash, hash))
 	}
-	if err != nil {
-		log.Fatal(task, err)
-	}
-	task.Finish()
 }
 
 func (task *FileTask) GetSite() string {
