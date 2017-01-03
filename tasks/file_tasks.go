@@ -5,6 +5,9 @@ import (
 	"io/ioutil"
 	"path"
 	"crypto/sha512"
+	"os"
+	"io"
+	"bytes"
 
 	"github.com/G1itchZero/ZeroGo/events"
 	"github.com/G1itchZero/ZeroGo/interfaces"
@@ -26,6 +29,9 @@ type FileTask struct {
 	OnChanges  chan events.SiteEvent
 	Priority   int
 	Success    bool
+	FullPath   string
+  Location int
+	Stream io.Writer
 }
 
 func NewTask(filename string, hash string, size float64, site string, ch chan events.SiteEvent) *FileTask {
@@ -42,6 +48,7 @@ func NewTask(filename string, hash string, size float64, site string, ch chan ev
 		Site:      site,
 		OnChanges: ch,
 		Priority:  p,
+		FullPath: path.Join(utils.GetDataPath(), site, filename),
 	}
 	return &task
 }
@@ -62,17 +69,31 @@ func (task *FileTask) GetSize() int64 {
 	return int64(task.Size)
 }
 
+func (task *FileTask) AppendContent(content []byte, location int) {
+	if task.Stream == nil {
+    var err error
+		task.Stream, err = os.Create(task.FullPath)
+	  if err != nil {
+	    // panic?
+	  }
+	}
+  if (location == 0 && task.Location == 0) || location > task.Location {
+    task.Location = location
+    // defer out.Close()
+    io.Copy(task.Stream, bytes.NewReader(content))
+  }
+}
+
 func (task *FileTask) SetContent(content []byte) {
 	// if len(task.Content) > 0 {
 	// 	return
 	// }
-	filename := path.Join(utils.GetDataPath(), task.Site, task.Filename)
 	task.Content = content
 	hash := fmt.Sprintf("%x", sha512.Sum512(task.Content))[0:64]
-	err := ioutil.WriteFile(filename, task.Content, 0644)
+	err := ioutil.WriteFile(task.FullPath, task.Content, 0644)
 	if task.Hash != "" && task.Hash != hash {
-		fmt.Printf("Size error '%s': %d != %d\n", filename, int(task.Size), len(task.Content))
-		log.Fatal(fmt.Errorf("Hash error '%s': %s != %s", filename, task.Hash, hash))
+		fmt.Printf("Size error '%s': %d != %d\n", task.FullPath, int(task.Size), len(task.Content))
+		log.Fatal(fmt.Errorf("Hash error '%s': %s != %s", task.FullPath, task.Hash, hash))
 	}
 	if err != nil {
 		log.Fatal(task, err)

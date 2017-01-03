@@ -117,13 +117,13 @@ func (peer *Peer) GetAddress() string {
 }
 
 func (peer *Peer) send(request *Request) Response {
+	peer.wlock.Lock()
 	request.ReqID = peer.ReqID
 	if request.Size != 0 {
 		peer.sizes[request.ReqID] = request.Size
 	}
 	data, _ := msgpack.Marshal(request)
 	peer.Connection.Write(data)
-	peer.wlock.Lock()
 	peer.buffers[request.ReqID] = []byte{}
 	peer.chans[request.ReqID] = make(chan Response)
 	peer.ReqID++
@@ -203,10 +203,29 @@ func (peer *Peer) Download(task interfaces.ITask) ([]byte, error) {
 		Size: task.GetSize(),
 	}
 	message := peer.send(&request)
-	if len(message.Buffer) != int(peer.sizes[request.ReqID]) && task.GetSize() != 0 {
-		log.Fatal(task, len(message.Buffer), peer.sizes[request.ReqID])
+	content := message.Buffer
+	if task.GetSize() != 0 && len(content) != int(peer.sizes[request.ReqID]) {
+    task.AppendContent(message.Buffer, location)
+		for len(content) != int(peer.sizes[request.ReqID]) {
+			// log.Warn(task, len(message.Buffer), peer.sizes[request.ReqID])
+			location += len(content)
+			request = Request{
+				Cmd: "streamFile",
+				Params: RequestFile{
+					Site:      task.GetSite(),
+					InnerPath: task.GetFilename(),
+					Location:  location,
+				},
+				Size: task.GetSize(),
+			}
+			message = peer.send(&request)
+			// fmt.Println(location, message.To, len(message.Buffer), message.Body, message.StreamBytes, message.Size, message.Location)
+			// fmt.Println(string(message.Buffer))
+      task.AppendContent(message.Buffer, location)
+		}
+	} else {
+		task.SetContent(content)
 	}
-	task.SetContent(message.Buffer)
 	peer.RemoveTask(task)
 	peer.ActiveTasks--
 	return task.GetContent(), res
