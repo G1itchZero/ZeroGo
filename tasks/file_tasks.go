@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"path"
+	"crypto/sha512"
 
 	"github.com/G1itchZero/ZeroGo/events"
 	"github.com/G1itchZero/ZeroGo/interfaces"
@@ -57,13 +58,22 @@ func (task *FileTask) GetContent() []byte {
 	return task.Content
 }
 
+func (task *FileTask) GetSize() int64 {
+	return int64(task.Size)
+}
+
 func (task *FileTask) SetContent(content []byte) {
 	// if len(task.Content) > 0 {
 	// 	return
 	// }
 	filename := path.Join(utils.GetDataPath(), task.Site, task.Filename)
 	task.Content = content
+	hash := fmt.Sprintf("%x", sha512.Sum512(task.Content))[0:64]
 	err := ioutil.WriteFile(filename, task.Content, 0644)
+	if task.Hash != "" && task.Hash != hash {
+		fmt.Printf("Size error '%s': %d != %d\n", filename, int(task.Size), len(task.Content))
+		log.Fatal(fmt.Errorf("Hash error '%s': %s != %s", filename, task.Hash, hash))
+	}
 	if err != nil {
 		log.Fatal(task, err)
 	}
@@ -78,6 +88,10 @@ func (task *FileTask) Start() {
 	task.Started = true
 }
 
+func (task *FileTask) GetStarted() bool {
+	return task.Started
+}
+
 func (task *FileTask) Finish() {
 	if !task.Done {
 		task.Done = true
@@ -90,12 +104,12 @@ func (task *FileTask) Finish() {
 	}
 }
 
-func (task *FileTask) AddPeer(p interfaces.IPeer) {
+func (task *FileTask) AddPeer(p interfaces.IPeer) error {
 	if task.Peers == nil {
 		task.Peers = []interfaces.IPeer{}
 	}
 	task.Peers = append(task.Peers, p)
-	p.AddTask(task)
+	return p.AddTask(task)
 }
 
 func (a Tasks) Len() int           { return len(a) }

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"html/template"
 	"log"
+	"fmt"
 
 	"github.com/G1itchZero/ZeroGo/site"
 	"github.com/G1itchZero/ZeroGo/utils"
@@ -143,7 +144,7 @@ func (w *Wrapper) Render(ctx echo.Context) error {
 	ctx.Response().WriteHeader(200)
 	_, err := ctx.Response().Write(buf.Bytes())
 	if err != nil {
-		log.Fatal(err)
+		log.Fatal(fmt.Errorf("Render error: %v", err))
 	}
 	return err
 }

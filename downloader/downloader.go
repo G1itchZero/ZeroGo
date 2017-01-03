@@ -16,6 +16,7 @@ import (
 	"github.com/G1itchZero/ZeroGo/utils"
 	"github.com/Jeffail/gabs"
 	"github.com/fatih/color"
+	"gopkg.in/cheggaaa/pb.v1"
 
 	log "github.com/Sirupsen/logrus"
 )
@@ -32,23 +33,27 @@ type Downloader struct {
 	TotalFiles       int
 	StartedTasks     int
 	OnChanges        chan events.SiteEvent
+	ProgressBar      *pb.ProgressBar
 	sync.Mutex
 }
 
 func NewDownloader(address string) *Downloader {
+	green := color.New(color.FgGreen).SprintFunc()
 	d := Downloader{
 		Peers:        peer_manager.NewPeerManager(address),
 		Address:      address,
 		OnChanges:    make(chan events.SiteEvent, 400),
 		Files:        map[string]*tasks.FileTask{},
 		StartedTasks: 0,
+		ProgressBar:  pb.New(1).Prefix(green(address)),
 	}
+	d.ProgressBar.SetRefreshRate(time.Millisecond * 50)
 	return &d
 }
 
 func (d *Downloader) Download(done chan int, filter FilterFunc, modified float64) bool {
 	green := color.New(color.FgGreen).SprintFunc()
-	fmt.Println(fmt.Sprintf("Download site: %s", green(d.Address)))
+	// fmt.Println(fmt.Sprintf("Download site: %s", green(d.Address)))
 
 	dir := path.Join(utils.GetDataPath(), d.Address)
 	os.MkdirAll(dir, 0777)
@@ -102,7 +107,7 @@ func (d *Downloader) Download(done chan int, filter FilterFunc, modified float64
 func (d *Downloader) GetContent() (*gabs.Container, error) {
 	filename := path.Join(utils.GetDataPath(), d.Address, "content.json")
 	if _, err := os.Stat(filename); err != nil {
-		fmt.Println("No downloaded content.json")
+		log.Info("No downloaded content.json")
 		return nil, errors.New("Not downloaded yet")
 	}
 	return utils.LoadJSON(filename)
@@ -136,6 +141,7 @@ func (d *Downloader) processContent(filter FilterFunc) *tasks.FileTask {
 		}).Debug("New task")
 	}
 	d.TotalFiles = len(files) + 1 //content.json
+	d.ProgressBar.Total = int64(d.TotalFiles)
 	return task
 
 }
@@ -154,7 +160,11 @@ func (d *Downloader) ScheduleFileForPeer(task *tasks.FileTask, peer interfaces.I
 		"task": task.Filename,
 		"peer": peer.GetAddress(),
 	}).Info("Requesting file")
-	task.AddPeer(peer)
+	res := task.AddPeer(peer)
+	if d.ProgressBar != nil && res == nil {
+		d.ProgressBar.Increment()
+		d.ProgressBar.Update()
+	}
 	return task
 }
 

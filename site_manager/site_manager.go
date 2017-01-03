@@ -1,12 +1,12 @@
 package site_manager
 
 import (
-	"fmt"
 	"io/ioutil"
 	"os"
 	"path"
 	"strings"
 	"time"
+  "fmt"
 
 	"github.com/G1itchZero/ZeroGo/downloader"
 	"github.com/G1itchZero/ZeroGo/site"
@@ -32,7 +32,7 @@ func (sm *SiteManager) LoadNames() {
 	log.Info("Loading .bit names...")
 	names, err := utils.LoadJSON(path.Join(utils.GetDataPath(), utils.ZN_NAMES, "data/names.json"))
 	if err != nil {
-		log.Fatal(err)
+		log.Fatal(fmt.Errorf("Error name resolving: %v", err))
 	}
 	sm.Names = names.Data().(map[string]interface{})
 }
@@ -91,7 +91,7 @@ func (sm *SiteManager) SaveSites() {
 	sites := sm.GetSites()
 	// log.Fatal(sites)
 	filename := path.Join(utils.GetDataPath(), "sites.json")
-	fmt.Println(ioutil.WriteFile(filename, []byte(sites.StringIndent("", "  ")), 0644))
+	ioutil.WriteFile(filename, []byte(sites.StringIndent("", "  ")), 0644)
 }
 
 func (sm *SiteManager) GetSites() *gabs.Container {

@@ -34,11 +34,11 @@ func main() {
 	app.Version = VERSION
 
 	app.Flags = []cli.Flag {
-    cli.BoolTFlag{
+    cli.BoolFlag{
       Name: "debug",
       Usage: "enable debug mode",
     },
-    cli.BoolTFlag{
+    cli.BoolFlag{
       Name: "no-tab",
       Usage: "dont open new tab",
     },
@@ -80,6 +80,24 @@ func main() {
 	<-sync
 	sm.LoadNames()
 
+	app.Commands = []cli.Command{
+    {
+      Name:    "download",
+      Aliases: []string{"d"},
+      Usage:   "download site",
+      Action:  func(c *cli.Context) error {
+				if c.Bool("debug") {
+					log.SetLevel(log.DebugLevel)
+				}
+				address := c.Args().First()
+				sm.Remove(address)
+				site := sm.Get(address)
+				site.Wait()
+        return nil
+      },
+    },
+	}
+
   app.Action = func(c *cli.Context) error {
 		utils.SetHomepage(c.String("homepage"))
 		s := server.NewServer(c.Int("port"), sm)
@@ -89,12 +107,16 @@ func main() {
 				log.Println(http.ListenAndServe("localhost:6060", nil))
 			}()
 		}
-	if !c.Bool("no-tab") {
-		go func() {
-			time.Sleep(time.Second)
-			browser.OpenURL(fmt.Sprintf("http://127.0.0.1:%d", c.Int("port")))
-		}()
-	}
+		if !c.Bool("no-tab") {
+			go func() {
+				time.Sleep(time.Second)
+				addr := utils.ZN_HOMEPAGE
+				if c.NArg() > 0 {
+					addr = c.Args().First()
+				}
+				browser.OpenURL(fmt.Sprintf("http://127.0.0.1:%d/%s", c.Int("port"), addr))
+			}()
+		}
 		s.Serve()
     return nil
   }

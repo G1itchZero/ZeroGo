@@ -3,6 +3,7 @@ package peer
 import (
 	"crypto/tls"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"io"
 	"math"
@@ -11,10 +12,12 @@ import (
 	"path"
 	"sync"
 	"time"
+	r "math/rand"
 
 	"github.com/G1itchZero/ZeroGo/interfaces"
 	"github.com/G1itchZero/ZeroGo/utils"
 	_ "github.com/Sirupsen/logrus"
+	log "github.com/Sirupsen/logrus"
 	msgpack "gopkg.in/vmihailenco/msgpack.v2"
 )
 
@@ -48,6 +51,7 @@ type Request struct {
 	Cmd    string      `msgpack:"cmd"`
 	ReqID  int         `msgpack:"req_id"`
 	Params interface{} `msgpack:"params"`
+	Size	 int64
 }
 
 type Response struct {
@@ -76,13 +80,15 @@ type Peer struct {
 	Listening   bool
 	Free        chan *Peer
 	wlock       *sync.Mutex
+	sizes map[int]int64
 	sync.Mutex
 }
 
-func (peer *Peer) AddTask(task interfaces.ITask) {
+func (peer *Peer) AddTask(task interfaces.ITask) error {
 	peer.Tasks = append(peer.Tasks, task)
-	peer.Download(task)
+	_, res := peer.Download(task)
 	peer.Free <- peer
+	return res
 }
 
 func (peer *Peer) RemoveTask(task interfaces.ITask) {
@@ -110,8 +116,11 @@ func (peer *Peer) GetAddress() string {
 	return peer.Address
 }
 
-func (peer *Peer) send(request Request) Response {
+func (peer *Peer) send(request *Request) Response {
 	request.ReqID = peer.ReqID
+	if request.Size != 0 {
+		peer.sizes[request.ReqID] = request.Size
+	}
 	data, _ := msgpack.Marshal(request)
 	peer.Connection.Write(data)
 	peer.wlock.Lock()
@@ -119,7 +128,7 @@ func (peer *Peer) send(request Request) Response {
 	peer.chans[request.ReqID] = make(chan Response)
 	peer.ReqID++
 	peer.wlock.Unlock()
-	// log.WithFields(log.Fields{"request": request}).Info("Sending")
+	log.WithFields(log.Fields{"request": request}).Info("Sending")
 	return <-peer.chans[request.ReqID]
 }
 
@@ -148,7 +157,7 @@ func (peer *Peer) handleAnswers() {
 		peer.Unlock()
 		answer := Response{}
 		msgpack.Unmarshal(message, &answer)
-		// log.WithFields(log.Fields{"answer": answer}).Info("Recv")
+		log.WithFields(log.Fields{"answer": answer}).Info("Recv")
 		// log.WithFields(log.Fields{"rq_id": request.ReqID, "answ_to": answer.To}).Info("Recv")
 		if answer.StreamBytes > 0 {
 			left := answer.StreamBytes
@@ -158,7 +167,7 @@ func (peer *Peer) handleAnswers() {
 				n, err := peer.Connection.Read(message)
 				peer.Unlock()
 				if err != nil {
-					fmt.Println("File streaming error", err)
+					log.Warn("File streaming error: ", err)
 					break
 				}
 				left = left - n
@@ -173,7 +182,11 @@ func (peer *Peer) handleAnswers() {
 	}
 }
 
-func (peer *Peer) Download(task interfaces.ITask) []byte {
+func (peer *Peer) Download(task interfaces.ITask) ([]byte, error) {
+	var res error = nil
+	if task.GetStarted() {
+		res = errors.New("Parallel")
+	}
 	task.Start()
 	peer.ActiveTasks++
 	peer.Tasks = append(peer.Tasks, task)
@@ -187,12 +200,16 @@ func (peer *Peer) Download(task interfaces.ITask) []byte {
 			InnerPath: task.GetFilename(),
 			Location:  location,
 		},
+		Size: task.GetSize(),
 	}
-	message := peer.send(request)
+	message := peer.send(&request)
+	if len(message.Buffer) != int(peer.sizes[request.ReqID]) && task.GetSize() != 0 {
+		log.Fatal(task, len(message.Buffer), peer.sizes[request.ReqID])
+	}
 	task.SetContent(message.Buffer)
 	peer.RemoveTask(task)
 	peer.ActiveTasks--
-	return task.GetContent()
+	return task.GetContent(), res
 }
 
 func (peer *Peer) Ping() {
@@ -200,7 +217,7 @@ func (peer *Peer) Ping() {
 		Cmd:    "ping",
 		Params: map[string]string{},
 	}
-	pong := peer.send(ping)
+	pong := peer.send(&ping)
 	if pong.Body == "Pong!" {
 		// fmt.Println("Ping successfull")
 	}
@@ -221,7 +238,7 @@ func (peer *Peer) Handshake() Response {
 			Crypt:          "tls-rsa",
 		},
 	}
-	return peer.send(hs)
+	return peer.send(&hs)
 }
 
 func (peer *Peer) Connect() error {
@@ -279,10 +296,12 @@ func NewPeer(info io.Reader, ch chan *Peer) *Peer {
 		Address:     fmt.Sprintf("%d.%d.%d.%d", addr[0], addr[1], addr[2], addr[3]),
 		Port:        binary.BigEndian.Uint64([]byte{0, 0, 0, 0, 0, 0, port[0], port[1]}),
 		buffers:     map[int][]byte{},
+		sizes:     map[int]int64{},
 		chans:       map[int]chan Response{},
 		ActiveTasks: 0,
 		Free:        ch,
 		wlock:       &sync.Mutex{},
+		ReqID:       r.Intn(1000),
 	}
 	return &peer
 }

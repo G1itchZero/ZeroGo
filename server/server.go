@@ -17,19 +17,23 @@ import (
 	"github.com/fatih/color"
 	"github.com/gorilla/websocket"
 	"github.com/labstack/echo"
+	"gopkg.in/cheggaaa/pb.v1"
 )
 
 type Server struct {
 	Port    int
 	Sockets map[string]*socket.UiSocket
 	Sites   *site_manager.SiteManager
+	pbPool  *pb.Pool
 }
 
 func NewServer(port int, sites *site_manager.SiteManager) *Server {
+	pool, _ := pb.StartPool()
 	server := Server{
 		Port:    port,
 		Sockets: map[string]*socket.UiSocket{},
 		Sites:   sites,
+		pbPool: pool,
 	}
 	return &server
 }
@@ -99,7 +103,7 @@ func (s *Server) Serve() {
 	e.GET("/:url", s.serveWrapper)
 	e.GET("/", s.serveWrapper)
 
-	e.Logger.Fatal(e.Start(fmt.Sprintf(":%d", s.Port)))
+	e.Logger.Fatal(fmt.Errorf("Serving result: %v", e.Start(fmt.Sprintf(":%d", s.Port))))
 }
 
 func (s *Server) serveWrapper(ctx echo.Context) error {
@@ -112,11 +116,12 @@ func (s *Server) serveWrapper(ctx echo.Context) error {
 		return nil
 	}
 	st := s.Sites.Get(url)
+	s.pbPool.Add(st.Downloader.ProgressBar)
 	if st == nil {
 		ctx.HTML(404, "No .bit name found")
 		return errors.New("No .bit name found")
 	}
-	fmt.Println(fmt.Sprintf("> %s", yellow(st.Address)))
+	log.Info(fmt.Sprintf("> %s", yellow(st.Address)))
 	s.Sites.Sites[url] = st
 	s.Sites.Sites[st.Address] = st
 	wrapper := NewWrapper(st)

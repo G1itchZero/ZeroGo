@@ -73,6 +73,9 @@ func (site *Site) Download(ch chan *Site) {
 	site.LastPeers = site.Downloader.Peers.Count
 	site.initDB()
 	site.Ready = true
+	site.Downloader.ProgressBar.Add(site.Downloader.TotalFiles - site.Downloader.FinishedTasks())
+	site.Downloader.ProgressBar.Update()
+	site.Downloader.ProgressBar.Finish()
 	site.Done <- site
 }
 
@@ -143,7 +146,7 @@ func (site *Site) WaitFile(filename string) bool {
 	}
 	n := 0
 	for !task.Done && site.Success {
-		fmt.Println("waiting for", task)
+		// fmt.Println("waiting for", task)
 		log.WithFields(log.Fields{
 			"task": task,
 		}).Info("Waiting for file")

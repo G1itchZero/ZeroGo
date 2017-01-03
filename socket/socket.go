@@ -114,10 +114,9 @@ func (socket *UiSocket) Serve(ws *websocket.Conn) {
 
 func (socket *UiSocket) dbQuery(message Message) {
 	res, err := socket.Site.DB.Query(message.Params.([]interface{})[0].(string))
-	if err != nil {
-		log.Fatal(err)
+	if err == nil {
+		socket.Response(message.ID, res)
 	}
-	socket.Response(message.ID, res)
 }
 
 func (socket *UiSocket) siteDelete(message Message) {

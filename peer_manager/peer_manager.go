@@ -125,10 +125,10 @@ func (pm *PeerManager) connectPeer(peer *peer.Peer) error {
 		}).Debug("Peer connected")
 		peer.Ping()
 	} else {
-		log.WithFields(log.Fields{
-			"error": err,
-			"peer":  peer,
-		}).Warn("Connection error")
+		// log.WithFields(log.Fields{
+		// 	"error": err,
+		// 	"peer":  peer,
+		// }).Warn("Connection error")
 		pm.removePeer(peer)
 	}
 	return err
