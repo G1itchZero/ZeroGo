@@ -34,7 +34,7 @@ type Site struct {
 }
 
 func NewSite(address string) *Site {
-	fmt.Println("Creating new site...")
+	log.Info("Creating new site...")
 	done := make(chan *Site, 2)
 	site := Site{
 		Address:    address,
@@ -126,7 +126,7 @@ func (site *Site) Remove() {
 
 func (site *Site) Wait() {
 	for !site.Downloader.ContentRequested || site.Downloader.PendingTasksCount() > 0 {
-		fmt.Println("Files left:", site.Downloader.PendingTasksCount())
+		log.Info("Files left: %d", site.Downloader.PendingTasksCount())
 		time.Sleep(time.Millisecond * 100)
 	}
 }

@@ -29,7 +29,7 @@ func NewSiteManager() *SiteManager {
 }
 
 func (sm *SiteManager) LoadNames() {
-	fmt.Println("Loading .bit names...")
+	log.Info("Loading .bit names...")
 	names, err := utils.LoadJSON(path.Join(utils.GetDataPath(), utils.ZN_NAMES, "data/names.json"))
 	if err != nil {
 		log.Fatal(err)
@@ -117,7 +117,7 @@ func (sm *SiteManager) updateSites() {
 			sm.Sites[address].LastContent = content.S("content")
 		}
 	}
-	fmt.Println("Sites preloaded...")
+	log.Info("Sites preloaded...")
 }
 
 func loadSites() (*gabs.Container, error) {

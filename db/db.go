@@ -118,6 +118,7 @@ func (db *DB) mapToField(dataField string, data *gabs.Container, jid int64) {
 }
 
 func (db *DB) Query(q string) (interface{}, error) {
+	log.Println(q)
 	for db.db == nil {
 		time.Sleep(time.Millisecond * 100)
 	}

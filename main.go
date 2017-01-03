@@ -1,7 +1,6 @@
 package main
 
 import (
-	"flag"
 	"fmt"
 	"os"
 	"path"
@@ -16,6 +15,7 @@ import (
 	"github.com/G1itchZero/ZeroGo/utils"
 	log "github.com/Sirupsen/logrus"
 	"github.com/pkg/browser"
+	"github.com/urfave/cli"
 )
 
 const VERSION string = "0.1.0"
@@ -28,21 +28,34 @@ func main() {
 		"id": utils.GetPeerID(),
 	}).Info("Your Peer ID")
 
-	debug := flag.Bool("debug", false, "debug mode")
-	port := flag.Int("port", 43210, "serving port")
-	homepage := flag.String("homepage", utils.ZN_HOMEPAGE, "homepage")
-	noNewTab := flag.Bool("no-tab", false, "dont open new tab")
-	flag.Parse()
+	app := cli.NewApp()
+  app.Name = "ZeroGo"
+  app.Usage = "ZeroNet gate"
+	app.Version = VERSION
+
+	app.Flags = []cli.Flag {
+    cli.BoolTFlag{
+      Name: "debug",
+      Usage: "enable debug mode",
+    },
+    cli.BoolTFlag{
+      Name: "no-tab",
+      Usage: "dont open new tab",
+    },
+    cli.IntFlag{
+      Name: "port",
+      Value: 43210,
+      Usage: "serving port",
+    },
+    cli.StringFlag{
+      Name: "homepage",
+      Value: utils.ZN_HOMEPAGE,
+      Usage: "homepage",
+    },
+  }
+
 	sm := site_manager.NewSiteManager()
 	hasMedia, _ := utils.Exists(path.Join(utils.GetDataPath(), utils.ZN_UPDATE))
-	utils.SetHomepage(*homepage)
-
-	if *debug {
-		log.SetLevel(log.DebugLevel)
-		go func() {
-			log.Println(http.ListenAndServe("localhost:6060", nil))
-		}()
-	}
 
 	sync := make(chan int)
 	if !hasMedia {
@@ -62,15 +75,29 @@ func main() {
 		return strings.HasPrefix(filename, "data/names.json")
 	})
 	names.Wait()
+	sm.Get(utils.ZN_ID)
+	// ids.Wait()
 	<-sync
 	sm.LoadNames()
 
-	s := server.NewServer(*port, sm)
-	if !*noNewTab {
+  app.Action = func(c *cli.Context) error {
+		utils.SetHomepage(c.String("homepage"))
+		s := server.NewServer(c.Int("port"), sm)
+		if c.Bool("debug") {
+			log.SetLevel(log.DebugLevel)
+			go func() {
+				log.Println(http.ListenAndServe("localhost:6060", nil))
+			}()
+		}
+	if !c.Bool("no-tab") {
 		go func() {
 			time.Sleep(time.Second)
-			browser.OpenURL(fmt.Sprintf("http://127.0.0.1:%d", *port))
+			browser.OpenURL(fmt.Sprintf("http://127.0.0.1:%d", c.Int("port")))
 		}()
 	}
-	s.Serve()
+		s.Serve()
+    return nil
+  }
+
+  app.Run(os.Args)
 }

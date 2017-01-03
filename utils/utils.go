@@ -36,6 +36,7 @@ const ZN_UPDATE string = "1UPDatEDxnvHDo7TXvq6AEBARfNkyfxsp"
 const ZN_HOMEPAGE string = "1HeLLo4uzjaLetFx6NH3PMwFP3qbRbTf3D"
 const ZN_MEDIA string = "ZeroNet/src/Ui/media"
 const ZN_NAMES string = "1Name2NXVi1RDPDgf5617UoW7xA6YrhM9F"
+const ZN_ID string = "1iD5ZQJMNXu43w1qLB8sfdHVKppVMduGz"
 
 var homepage string
 
@@ -186,6 +187,5 @@ func GetExternalIP() string {
 		return "0.0.0.0"
 	}
 	IP = strings.Trim(string(ip), "\n ")
-	fmt.Println(IP)
 	return IP
 }

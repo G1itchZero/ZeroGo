@@ -86,6 +86,9 @@ func (socket *UiSocket) Serve(ws *websocket.Conn) {
 			go func(message Message) {
 				// socket.Site.Wait()
 				info := socket.Site.GetInfo()
+				if message.Params == "" {
+					return
+				}
 				params := message.Params.(map[string]interface{})
 				if params["file_status"] != nil {
 					status := "file_done"
