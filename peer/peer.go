@@ -208,9 +208,10 @@ func (peer *Peer) Download(task interfaces.ITask) ([]byte, error) {
   s := int(peer.sizes[request.ReqID])
   l := len(content)
 	if task.GetSize() != 0 && l != int(s) {
-		for l != s {
+		for location + l < s && !task.GetDone() {
 			// log.Warn(task, len(message.Buffer), peer.sizes[request.ReqID])
-			location += len(content)
+			l = len(content)
+			location += l
 			request.Params = RequestFile{
 				Site:      task.GetSite(),
 				InnerPath: task.GetFilename(),

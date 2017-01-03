@@ -8,6 +8,7 @@ type ITask interface {
 	GetFilename() string
 	GetContent() []byte
 	GetStarted() bool
+	GetDone() bool
 	AppendContent([]byte, int)
 	GetSize() int64
 	Start()

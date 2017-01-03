@@ -103,6 +103,10 @@ func (task *FileTask) GetSite() string {
 	return task.Site
 }
 
+func (task *FileTask) GetDone() bool {
+	return task.Done
+}
+
 func (task *FileTask) Start() {
 	task.Started = true
 }

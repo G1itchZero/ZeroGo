@@ -12,17 +12,21 @@ import (
 	"github.com/G1itchZero/ZeroGo/site"
 	"github.com/G1itchZero/ZeroGo/utils"
 	"github.com/Jeffail/gabs"
+	"gopkg.in/cheggaaa/pb.v1"
 	log "github.com/Sirupsen/logrus"
 )
 
 type SiteManager struct {
 	Sites map[string]*site.Site
 	Names map[string]interface{}
+	pbPool  *pb.Pool
 }
 
 func NewSiteManager() *SiteManager {
+  pool, _ := pb.StartPool()
 	sm := SiteManager{
 		Sites: map[string]*site.Site{},
+    pbPool: pool,
 	}
 	go sm.updateSites()
 	return &sm
@@ -62,6 +66,7 @@ func (sm *SiteManager) Get(address string) *site.Site {
 			sm.Sites[bit] = s
 		}
 	}
+	sm.pbPool.Add(s.Downloader.ProgressBar)
 	go sm.processSite(s)
 	return s
 }
@@ -74,6 +79,7 @@ func (sm *SiteManager) GetFiles(address string, filter downloader.FilterFunc) *s
 		s.Added = int(time.Now().Unix())
 		sm.Sites[address] = s
 	}
+	sm.pbPool.Add(s.Downloader.ProgressBar)
 	go sm.processSite(s)
 	return s
 }

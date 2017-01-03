@@ -16,6 +16,8 @@ import (
 	log "github.com/Sirupsen/logrus"
 	"github.com/pkg/browser"
 	"github.com/urfave/cli"
+	l "log"
+	"io/ioutil"
 )
 
 const VERSION string = "0.1.0"
@@ -23,7 +25,8 @@ const VERSION string = "0.1.0"
 func main() {
 	os.MkdirAll(utils.GetDataPath(), 0777)
 	utils.CreateCerts()
-	log.SetLevel(log.WarnLevel)
+	log.SetLevel(log.ErrorLevel)
+	l.SetOutput(ioutil.Discard)
 	log.WithFields(log.Fields{
 		"id": utils.GetPeerID(),
 	}).Info("Your Peer ID")

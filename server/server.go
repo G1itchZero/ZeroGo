@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"html/template"
 	"io"
+	"io/ioutil"
 	"net/http"
 	"path"
 	"time"
@@ -17,23 +18,19 @@ import (
 	"github.com/fatih/color"
 	"github.com/gorilla/websocket"
 	"github.com/labstack/echo"
-	"gopkg.in/cheggaaa/pb.v1"
 )
 
 type Server struct {
 	Port    int
 	Sockets map[string]*socket.UiSocket
 	Sites   *site_manager.SiteManager
-	pbPool  *pb.Pool
 }
 
 func NewServer(port int, sites *site_manager.SiteManager) *Server {
-	pool, _ := pb.StartPool()
 	server := Server{
 		Port:    port,
 		Sockets: map[string]*socket.UiSocket{},
 		Sites:   sites,
-		pbPool: pool,
 	}
 	return &server
 }
@@ -89,6 +86,9 @@ func (s *Server) socketHandler(c echo.Context) error {
 
 func (s *Server) Serve() {
 	e := echo.New()
+
+	e.Logger.SetOutput(ioutil.Discard)
+	e.Color.SetOutput(ioutil.Discard)
 	e.Use(NoCacheMiddleware)
 	e.Static("/uimedia", path.Join(utils.GetDataPath(), utils.ZN_UPDATE, utils.ZN_MEDIA))
 
@@ -116,7 +116,6 @@ func (s *Server) serveWrapper(ctx echo.Context) error {
 		return nil
 	}
 	st := s.Sites.Get(url)
-	s.pbPool.Add(st.Downloader.ProgressBar)
 	if st == nil {
 		ctx.HTML(404, "No .bit name found")
 		return errors.New("No .bit name found")
