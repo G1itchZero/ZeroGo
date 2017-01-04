@@ -8,6 +8,7 @@ import (
 	"io/ioutil"
 	"net/http"
 	"path"
+	"strings"
 	"time"
 
 	"github.com/G1itchZero/ZeroGo/socket"
@@ -96,6 +97,7 @@ func (s *Server) Serve() {
 	inner.Use(InnerMiddleware)
 	inner.Use(NoCacheMiddleware)
 	inner.GET("/:site", s.serveInner)
+	// inner.GET("/:site?*", s.innerLink)
 	inner.GET("/*", s.serveInnerStatic)
 
 	e.GET("/Websocket", s.socketHandler)
@@ -106,6 +108,10 @@ func (s *Server) Serve() {
 	e.Logger.Fatal(fmt.Errorf("Serving result: %v", e.Start(fmt.Sprintf(":%d", s.Port))))
 }
 
+// func (s *Server) innerLink(ctx echo.Context) error {
+// 	return ctx.Redirect(302, fmt.Sprintf("/%s?%s", ctx.Param("site"), ctx.QueryString()))
+// }
+//
 func (s *Server) serveWrapper(ctx echo.Context) error {
 	yellow := color.New(color.FgYellow).SprintFunc()
 	url := ctx.Param("url")
@@ -123,7 +129,7 @@ func (s *Server) serveWrapper(ctx echo.Context) error {
 	log.Info(fmt.Sprintf("> %s", yellow(st.Address)))
 	s.Sites.Sites[url] = st
 	s.Sites.Sites[st.Address] = st
-	wrapper := NewWrapper(st)
+	wrapper := NewWrapper(st, ctx)
 	err := wrapper.Render(ctx)
 	if err != nil {
 		log.Error("Wrapper rendering error", err)
@@ -135,6 +141,12 @@ func (s *Server) serveWrapper(ctx echo.Context) error {
 
 func (s *Server) serveInner(ctx echo.Context) error {
 	name := ctx.Param("site")
+	if !strings.Contains(ctx.QueryString(), "wrapper_nonce") {
+		return ctx.Redirect(302, fmt.Sprintf("/%s?%s", ctx.Param("site"), ctx.QueryString()))
+	}
+	// if strings.Contains(name, "?") {
+	// 	return ctx.Redirect(302, fmt.Sprintf("/%s", name))
+	// }
 	root := path.Join(utils.GetDataPath(), name)
 	filename := path.Join(root, "index.html")
 	site := s.Sites.Sites[name]

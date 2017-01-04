@@ -48,6 +48,7 @@ func NewDownloader(address string) *Downloader {
 		ProgressBar:  pb.New(1).Prefix(green(address)),
 	}
 	d.ProgressBar.SetRefreshRate(time.Millisecond * 50)
+	d.ProgressBar.ShowTimeLeft = false
 	return &d
 }
 
@@ -128,8 +129,10 @@ func (d *Downloader) processContent(filter FilterFunc) *tasks.FileTask {
 			files[k] = info
 		}
 	}
+	d.TotalFiles = len(files) + 1 //content.json
 	for filename, child := range files {
 		if filter != nil && !filter(filename) {
+			d.TotalFiles--
 			continue
 		}
 		file := child.Data().(map[string]interface{})
@@ -140,7 +143,6 @@ func (d *Downloader) processContent(filter FilterFunc) *tasks.FileTask {
 			"task": task,
 		}).Debug("New task")
 	}
-	d.TotalFiles = len(files) + 1 //content.json
 	d.ProgressBar.Total = int64(d.TotalFiles)
 	return task
 

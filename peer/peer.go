@@ -7,12 +7,12 @@ import (
 	"fmt"
 	"io"
 	"math"
+	r "math/rand"
 	"net"
 	"os"
 	"path"
 	"sync"
 	"time"
-	r "math/rand"
 
 	"github.com/G1itchZero/ZeroGo/interfaces"
 	"github.com/G1itchZero/ZeroGo/utils"
@@ -51,7 +51,7 @@ type Request struct {
 	Cmd    string      `msgpack:"cmd"`
 	ReqID  int         `msgpack:"req_id"`
 	Params interface{} `msgpack:"params"`
-	Size	 int64
+	Size   int64
 }
 
 type Response struct {
@@ -80,7 +80,7 @@ type Peer struct {
 	Listening   bool
 	Free        chan *Peer
 	wlock       *sync.Mutex
-	sizes map[int]int64
+	sizes       map[int]int64
 	sync.Mutex
 }
 
@@ -157,7 +157,7 @@ func (peer *Peer) handleAnswers() {
 		peer.Unlock()
 		answer := Response{}
 		msgpack.Unmarshal(message, &answer)
-		log.WithFields(log.Fields{"answer": answer}).Info("Recv")
+		// log.WithFields(log.Fields{"answer": answer}).Info("Recv")
 		// log.WithFields(log.Fields{"rq_id": request.ReqID, "answ_to": answer.To}).Info("Recv")
 		if answer.StreamBytes > 0 {
 			left := answer.StreamBytes
@@ -204,11 +204,11 @@ func (peer *Peer) Download(task interfaces.ITask) ([]byte, error) {
 	}
 	message := peer.send(&request)
 	content := message.Buffer
-  task.AppendContent(message.Buffer, location)
-  s := int(peer.sizes[request.ReqID])
-  l := len(content)
+	task.AppendContent(message.Buffer, location)
+	s := int(peer.sizes[request.ReqID])
+	l := len(content)
 	if task.GetSize() != 0 && l != int(s) {
-		for location + l < s && !task.GetDone() {
+		for location+l < s && !task.GetDone() {
 			// log.Warn(task, len(message.Buffer), peer.sizes[request.ReqID])
 			l = len(content)
 			location += l
@@ -218,13 +218,15 @@ func (peer *Peer) Download(task interfaces.ITask) ([]byte, error) {
 				Location:  location,
 			}
 			message = peer.send(&request)
-      task.AppendContent(message.Buffer, location)
+			task.AppendContent(message.Buffer, location)
 		}
 	}
-  if len(content) == 0 {
-    task.Check()
-  }
-  task.Finish()
+	if len(content) == 0 {
+		if !task.Check() {
+			log.Fatal(task)
+		}
+	}
+	task.Finish()
 	peer.RemoveTask(task)
 	peer.ActiveTasks--
 	return task.GetContent(), res
@@ -314,7 +316,7 @@ func NewPeer(info io.Reader, ch chan *Peer) *Peer {
 		Address:     fmt.Sprintf("%d.%d.%d.%d", addr[0], addr[1], addr[2], addr[3]),
 		Port:        binary.BigEndian.Uint64([]byte{0, 0, 0, 0, 0, 0, port[0], port[1]}),
 		buffers:     map[int][]byte{},
-		sizes:     map[int]int64{},
+		sizes:       map[int]int64{},
 		chans:       map[int]chan Response{},
 		ActiveTasks: 0,
 		Free:        ch,

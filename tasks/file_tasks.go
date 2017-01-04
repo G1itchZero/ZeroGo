@@ -1,13 +1,14 @@
 package tasks
 
 import (
-	"fmt"
-	"io/ioutil"
-	"path"
-	"crypto/sha512"
-	"os"
-	"io"
 	"bytes"
+	"crypto/sha512"
+	"fmt"
+	"io"
+	"io/ioutil"
+	"os"
+	"path"
+	"time"
 
 	"github.com/G1itchZero/ZeroGo/events"
 	"github.com/G1itchZero/ZeroGo/interfaces"
@@ -22,16 +23,17 @@ type FileTask struct {
 	Hash       string  `json:"sha512"`
 	Size       float64 `json:"size"`
 	Downloaded float64
-	Content    []byte
 	Peers      []interfaces.IPeer
 	Started    bool
+	StartTime  time.Time
+	Duration   time.Duration
 	Done       bool
 	OnChanges  chan events.SiteEvent
 	Priority   int
 	Success    bool
 	FullPath   string
-  Location int
-	Stream io.Writer
+	Location   int
+	Stream     io.Writer
 }
 
 func NewTask(filename string, hash string, size float64, site string, ch chan events.SiteEvent) *FileTask {
@@ -48,7 +50,8 @@ func NewTask(filename string, hash string, size float64, site string, ch chan ev
 		Site:      site,
 		OnChanges: ch,
 		Priority:  p,
-		FullPath: path.Join(utils.GetDataPath(), site, filename),
+		FullPath:  path.Join(utils.GetDataPath(), site, filename),
+		StartTime: time.Now(),
 	}
 	return &task
 }
@@ -78,25 +81,30 @@ func (task *FileTask) AppendContent(content []byte, location int) {
 		return
 	}
 	if task.Stream == nil {
-    var err error
+		var err error
 		task.Stream, err = os.Create(task.FullPath)
-	  if err != nil {
-	    // panic?
-	  }
+		if err != nil {
+			// panic?
+		}
 	}
-  if (location == 0 && task.Location == 0) || location > task.Location {
-    task.Location = location
-    io.Copy(task.Stream, bytes.NewReader(content))
-  }
+	if (location == 0 && task.Location == 0) || location > task.Location {
+		task.Location = location
+		io.Copy(task.Stream, bytes.NewReader(content))
+	}
 }
 
-func (task *FileTask) Check() {
-  fc, _ := ioutil.ReadFile(task.FullPath)
+func (task *FileTask) Check() bool {
+	fc, err := ioutil.ReadFile(task.FullPath)
+	if err != nil {
+		log.Warn(err)
+		return false
+	}
 	hash := fmt.Sprintf("%x", sha512.Sum512(fc))[0:64]
 	if task.Hash != "" && task.Hash != hash {
-		// fmt.Printf("Size error '%s': %d != %d\n", task.FullPath, int(task.Size), len(task.Content))
-		log.Fatal(fmt.Errorf("Hash error '%s': %s != %s", task.FullPath, task.Hash, hash))
+		return false
+		// log.Fatal(fmt.Errorf("Hash error '%s': %s != %s", task.FullPath, task.Hash, hash))
 	}
+	return true
 }
 
 func (task *FileTask) GetSite() string {
@@ -124,10 +132,15 @@ func (task *FileTask) Finish() {
 			"task": task,
 		}).Debug("Finished")
 		task.Priority = -1
+		task.Duration = time.Now().Sub(task.StartTime)
 	}
 }
 
 func (task *FileTask) AddPeer(p interfaces.IPeer) error {
+	if task.Check() {
+		task.Finish()
+		return nil
+	}
 	if task.Peers == nil {
 		task.Peers = []interfaces.IPeer{}
 	}

@@ -113,7 +113,14 @@ func (socket *UiSocket) Serve(ws *websocket.Conn) {
 }
 
 func (socket *UiSocket) dbQuery(message Message) {
-	res, err := socket.Site.DB.Query(message.Params.([]interface{})[0].(string))
+	var q string
+	switch p := message.Params.(type) {
+	case []interface{}:
+		q = p[0].(string)
+	case string:
+		q = p
+	}
+	res, err := socket.Site.DB.Query(q)
 	if err == nil {
 		socket.Response(message.ID, res)
 	}

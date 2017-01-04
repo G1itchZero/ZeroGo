@@ -12,7 +12,7 @@ type ITask interface {
 	AppendContent([]byte, int)
 	GetSize() int64
 	Start()
-	Check()
+	Check() bool
 	Finish()
 }
 type IPeer interface {

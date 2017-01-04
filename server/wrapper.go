@@ -2,9 +2,9 @@ package server
 
 import (
 	"bytes"
+	"fmt"
 	"html/template"
 	"log"
-	"fmt"
 
 	"github.com/G1itchZero/ZeroGo/site"
 	"github.com/G1itchZero/ZeroGo/utils"
@@ -111,7 +111,7 @@ type Wrapper struct {
 	ServerURL                string
 }
 
-func NewWrapper(s *site.Site) *Wrapper {
+func NewWrapper(s *site.Site, ctx echo.Context) *Wrapper {
 	nonce := utils.RandomString(36)
 	wrapperKey := utils.RandomString(36)
 	title := s.Address
@@ -126,10 +126,13 @@ func NewWrapper(s *site.Site) *Wrapper {
 		FileInnerPath:     "index.html",
 		ShowLoadingScreen: true,
 		Lang:              "en",
-		QueryString:       "?wrapper_nonce=" + nonce,
+		QueryString:       fmt.Sprintf("?wrapper_nonce=%s", nonce),
 		Nonce:             nonce,
 		Key:               wrapperKey,
 		Homepage:          "/" + utils.ZN_HOMEPAGE,
+	}
+	if ctx.QueryString() != "" {
+		w.QueryString += "&" + ctx.QueryString()
 	}
 	return &w
 }

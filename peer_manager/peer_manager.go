@@ -274,7 +274,7 @@ func (pm *PeerManager) announceUDPTracker(socket *net.UDPConn, serverAddr *net.U
 	n, _, err := socket.ReadFromUDP(buf2)
 	buf2 = buf2[0:n]
 	if err != nil {
-		fmt.Println("Error: ", err)
+		// fmt.Println("Error: ", err)
 		return Peers{}, err
 	}
 	answer := bytes.NewReader(buf2)
@@ -317,14 +317,14 @@ func (pm *PeerManager) announceUDP(tracker string) Peers {
 	connectionID, err := pm.connectUDPTracker(socket, serverAddr, transactionID)
 
 	if err != nil {
-		fmt.Println("Error: ", err)
+		// fmt.Println("Error: ", err)
 		return Peers{}
 	}
 
 	peers, err := pm.announceUDPTracker(socket, serverAddr, transactionID, connectionID, port)
 
 	if err != nil {
-		fmt.Println("Error: ", err)
+		// fmt.Println("Error: ", err)
 		return Peers{}
 	}
 	return peers
