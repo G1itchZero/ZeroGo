@@ -28,6 +28,7 @@ type Downloader struct {
 	Peers            *peer_manager.PeerManager
 	Tasks            tasks.Tasks
 	Files            map[string]*tasks.FileTask
+	Includes         []string
 	ContentRequested bool
 	Content          *gabs.Container
 	TotalFiles       int
@@ -45,10 +46,13 @@ func NewDownloader(address string) *Downloader {
 		OnChanges:    make(chan events.SiteEvent, 400),
 		Files:        map[string]*tasks.FileTask{},
 		StartedTasks: 0,
-		ProgressBar:  pb.New(1).Prefix(green(address)),
+		Includes:     []string{},
 	}
-	d.ProgressBar.SetRefreshRate(time.Millisecond * 50)
-	d.ProgressBar.ShowTimeLeft = false
+	if !utils.GetDebug() {
+		d.ProgressBar = pb.New(1).Prefix(green(address))
+		d.ProgressBar.SetRefreshRate(time.Millisecond * 50)
+		d.ProgressBar.ShowTimeLeft = false
+	}
 	return &d
 }
 
@@ -122,11 +126,35 @@ func (d *Downloader) processContent(filter FilterFunc) *tasks.FileTask {
 	files, _ := content.S("files").ChildrenMap()
 	includes, _ := content.S("includes").ChildrenMap()
 	if includes != nil {
-		for k := range includes {
+		for name := range includes {
 			info, _ := gabs.Consume(map[string]interface{}{
-				"sha512": "", "size": 1024000.0,
+				"sha512": "", "size": 2048000.0,
 			})
-			files[k] = info
+			files[name] = info
+			d.Includes = append(d.Includes, name)
+			// func(name string) {
+			t := tasks.NewTask(name, "", 2048000.0, d.Address, d.OnChanges)
+			d.Tasks = append(d.Tasks, t)
+			t = d.ScheduleFile(t)
+			// log.Fatal(t)
+			content, err := gabs.ParseJSON(t.GetContent())
+			if err != nil {
+				log.Fatalf("Include content error: %s", err)
+			}
+			users, err := content.S("user_contents").S("archived").ChildrenMap()
+			if err != nil {
+				// log.Fatalf("Include users list error: %s", err)
+				continue
+			}
+			for u := range users {
+				u = path.Join("data/users", u)
+				info, _ := gabs.Consume(map[string]interface{}{
+					"sha512": "", "size": 2048000.0,
+				})
+				files[path.Join(u, "content.json")] = info
+				files[path.Join(u, "data.json")] = info
+			}
+			// }(k)
 		}
 	}
 	d.TotalFiles = len(files) + 1 //content.json
@@ -137,13 +165,16 @@ func (d *Downloader) processContent(filter FilterFunc) *tasks.FileTask {
 		}
 		file := child.Data().(map[string]interface{})
 		t := tasks.NewTask(filename, file["sha512"].(string), file["size"].(float64), d.Address, d.OnChanges)
+		log.Println(filename)
 		d.Tasks = append(d.Tasks, t)
 		d.Files[t.Filename] = t
 		log.WithFields(log.Fields{
 			"task": task,
 		}).Debug("New task")
 	}
-	d.ProgressBar.Total = int64(d.TotalFiles)
+	if d.ProgressBar != nil {
+		d.ProgressBar.Total = int64(d.TotalFiles)
+	}
 	return task
 
 }

@@ -73,18 +73,20 @@ func (site *Site) Download(ch chan *Site) {
 	site.LastPeers = site.Downloader.Peers.Count
 	site.initDB()
 	site.Ready = true
-	site.Downloader.ProgressBar.Add(site.Downloader.TotalFiles - site.Downloader.FinishedTasks())
-	site.Downloader.ProgressBar.Update()
-	site.Downloader.ProgressBar.Finish()
+	// site.Downloader.ProgressBar.Add(site.Downloader.TotalFiles - site.Downloader.FinishedTasks())
+	if site.Downloader.ProgressBar != nil {
+		site.Downloader.ProgressBar.Update()
+		site.Downloader.ProgressBar.Finish()
+	}
 	site.Done <- site
 }
 
 func (site *Site) initDB() {
-	log.Println("initDB")
 	filename := path.Join(site.Path, "dbschema.json")
 	if _, err := os.Stat(filename); err != nil {
 		return
 	}
+	// log.Fatal("initDB")
 	schema, _ := utils.LoadJSON(filename)
 	site.DB = db.NewDB(site.Address, schema, site.Path)
 	site.DB.Init()

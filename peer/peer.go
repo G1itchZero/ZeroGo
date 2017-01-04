@@ -128,7 +128,7 @@ func (peer *Peer) send(request *Request) Response {
 	peer.chans[request.ReqID] = make(chan Response)
 	peer.ReqID++
 	peer.wlock.Unlock()
-	log.WithFields(log.Fields{"request": request}).Info("Sending")
+	// log.WithFields(log.Fields{"request": request}).Info("Sending")
 	return <-peer.chans[request.ReqID]
 }
 
@@ -209,7 +209,7 @@ func (peer *Peer) Download(task interfaces.ITask) ([]byte, error) {
 	l := len(content)
 	if task.GetSize() != 0 && l != int(s) {
 		for location+l < s && !task.GetDone() {
-			// log.Warn(task, len(message.Buffer), peer.sizes[request.ReqID])
+			log.Warn(task, len(message.Buffer), peer.sizes[request.ReqID])
 			l = len(content)
 			location += l
 			request.Params = RequestFile{
@@ -223,7 +223,7 @@ func (peer *Peer) Download(task interfaces.ITask) ([]byte, error) {
 	}
 	if len(content) == 0 {
 		if !task.Check() {
-			log.Fatal(task)
+			log.Warnf("Hash error: %s", task)
 		}
 	}
 	task.Finish()

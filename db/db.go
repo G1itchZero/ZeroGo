@@ -2,15 +2,16 @@ package db
 
 import (
 	"database/sql"
+	"errors"
 	"fmt"
-	"log"
 	"os"
 	"path"
 	"path/filepath"
 	"regexp"
 	"strings"
 	"time"
-	"errors"
+
+	log "github.com/Sirupsen/logrus"
 
 	"github.com/G1itchZero/ZeroGo/utils"
 	"github.com/Jeffail/gabs"

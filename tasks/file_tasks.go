@@ -33,7 +33,7 @@ type FileTask struct {
 	Success    bool
 	FullPath   string
 	Location   int
-	Stream     io.Writer
+	Stream     *os.File
 }
 
 func NewTask(filename string, hash string, size float64, site string, ch chan events.SiteEvent) *FileTask {
@@ -133,6 +133,7 @@ func (task *FileTask) Finish() {
 		}).Debug("Finished")
 		task.Priority = -1
 		task.Duration = time.Now().Sub(task.StartTime)
+		task.Stream.Close()
 	}
 }
 

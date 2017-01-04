@@ -120,9 +120,9 @@ func (pm *PeerManager) Announce() {
 func (pm *PeerManager) connectPeer(peer *peer.Peer) error {
 	err := peer.Connect()
 	if err == nil {
-		log.WithFields(log.Fields{
-			"peer": peer,
-		}).Debug("Peer connected")
+		// log.WithFields(log.Fields{
+		// 	"peer": peer,
+		// }).Debug("Peer connected")
 		peer.Ping()
 	} else {
 		// log.WithFields(log.Fields{
